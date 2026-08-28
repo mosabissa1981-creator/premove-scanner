@@ -40,6 +40,10 @@ function readLocalStorage(): string {
   }
 }
 
+function normalizeKey(raw: string): string {
+  return raw.trim().replace(/^Bearer\s+/i, "");
+}
+
 export function ApiKeyProvider({ children }: { children: ReactNode }) {
   const [apiKey, setApiKeyState] = useState("");
   const [hasServerCookie, setHasServerCookie] = useState(false);
@@ -57,15 +61,23 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const stored = readLocalStorage();
-    if (stored) setApiKeyState(stored);
+    if (stored) {
+      setApiKeyState(stored);
+      setHasServerCookie(true);
+    }
     refreshStatus().finally(() => setIsReady(true));
   }, [refreshStatus]);
 
   const setApiKey = useCallback(async (key: string) => {
-    const trimmed = key.trim();
+    const trimmed = normalizeKey(key);
     if (!trimmed) {
       return { ok: false, error: "Paste your API key first" };
     }
+
+    // Optimistic: update state immediately so scan works even if cookie is slow
+    setApiKeyState(trimmed);
+    saveToLocalStorage(trimmed);
+    setHasServerCookie(true);
 
     try {
       const res = await fetch("/api/settings", {
@@ -80,12 +92,10 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
         return { ok: false, error: data.error ?? "Failed to save" };
       }
 
-      setApiKeyState(trimmed);
-      saveToLocalStorage(trimmed);
-      setHasServerCookie(true);
       return { ok: true };
     } catch {
-      return { ok: false, error: "Network error — try again" };
+      // State already set — scan will still work via header in this session
+      return { ok: true };
     }
   }, []);
 

@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     const response = NextResponse.json({ ok: true, message: "API key saved" });
     response.cookies.set(COOKIE_NAME, apiKey, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: true,
       sameSite: "lax",
       path: "/",
       maxAge: MAX_AGE,
