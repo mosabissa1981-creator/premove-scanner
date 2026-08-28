@@ -88,6 +88,13 @@ export default function ScannerPage() {
 
       {result && (
         <>
+          <p className="text-center text-xs text-zinc-500">
+            Scanned {result.candidatesScreened} candidates
+            {result.scannedAt && (
+              <> · {new Date(result.scannedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</>
+            )}
+          </p>
+
           <div className="grid grid-cols-3 gap-2 text-center">
             <MiniStat label="Ready" value={ready.length} accent />
             <MiniStat label="Setting up" value={settingUp.length} />
@@ -123,6 +130,14 @@ export default function ScannerPage() {
             <p className="text-center text-sm text-zinc-500">
               No strong setups right now. Try again after market open.
             </p>
+          )}
+
+          {result.errors.length > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+              {result.errors.length} ticker{result.errors.length !== 1 ? "s" : ""} skipped:{" "}
+              {result.errors.slice(0, 3).join(" · ")}
+              {result.errors.length > 3 && ` (+${result.errors.length - 3} more)`}
+            </div>
           )}
         </>
       )}

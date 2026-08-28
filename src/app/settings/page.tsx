@@ -6,7 +6,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useApiKey } from "@/lib/api-key-context";
 
 function SettingsForm() {
-  const { refreshStatus, hasKey } = useApiKey();
+  const { refreshStatus, clearApiKey, hasKey } = useApiKey();
   const router = useRouter();
   const searchParams = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -22,13 +22,9 @@ function SettingsForm() {
       refreshStatus();
     }
     if (cleared) {
-      try {
-        localStorage.removeItem("premove_uw_api_key");
-      } catch {
-        // ignore
-      }
+      void clearApiKey();
     }
-  }, [saved, cleared, refreshStatus]);
+  }, [saved, cleared, refreshStatus, clearApiKey]);
 
   const updateCount = () => {
     const val = inputRef.current?.value ?? "";

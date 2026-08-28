@@ -88,7 +88,7 @@ export function TickerDetailView({ analysis }: { analysis: TickerAnalysis }) {
           {analysis.companyName && (
             <p className="mt-1 text-zinc-400">{analysis.companyName}</p>
           )}
-          {analysis.stockPrice && (
+          {analysis.stockPrice != null && analysis.stockPrice > 0 && (
             <p className="mt-1 text-2xl font-semibold tabular-nums">
               ${analysis.stockPrice.toFixed(2)}
               <span
@@ -102,6 +102,39 @@ export function TickerDetailView({ analysis }: { analysis: TickerAnalysis }) {
         </div>
         <ScoreRing score={analysis.score} maxScore={analysis.maxScore} />
       </div>
+
+      <div className="flex flex-wrap gap-2">
+        <span className="rounded-full bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-300">
+          {analysis.holdTime}
+        </span>
+        {analysis.sector && (
+          <span className="rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-400">
+            {analysis.sector}
+          </span>
+        )}
+      </div>
+
+      {(analysis.resistanceLevel || analysis.stopLevel) && (
+        <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+          <h2 className="text-sm font-semibold text-zinc-300">Swing levels</h2>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {analysis.resistanceLevel && (
+              <LevelCard
+                label="Entry trigger (resistance)"
+                value={`$${analysis.resistanceLevel.toFixed(2)}`}
+                hint="Enter on daily close above this level with volume"
+              />
+            )}
+            {analysis.stopLevel && analysis.stockPrice && (
+              <LevelCard
+                label="Suggested stop"
+                value={`$${analysis.stopLevel.toFixed(2)}`}
+                hint={`${(((analysis.stockPrice - analysis.stopLevel) / analysis.stockPrice) * 100).toFixed(1)}% below current`}
+              />
+            )}
+          </div>
+        </section>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric label="Options Premium" value={`$${(analysis.premium / 1e6).toFixed(2)}M`} />
@@ -172,6 +205,24 @@ function GexMetric({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg bg-zinc-800/50 px-3 py-2">
       <div className="text-xs text-zinc-500">{label}</div>
       <div className="font-medium capitalize text-zinc-200">{value}</div>
+    </div>
+  );
+}
+
+function LevelCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="rounded-lg border border-zinc-700 bg-zinc-800/40 px-4 py-3">
+      <div className="text-xs text-zinc-500">{label}</div>
+      <div className="mt-1 text-lg font-semibold tabular-nums text-emerald-300">{value}</div>
+      <p className="mt-1 text-xs text-zinc-500">{hint}</p>
     </div>
   );
 }

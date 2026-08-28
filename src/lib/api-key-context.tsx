@@ -60,12 +60,10 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const stored = readLocalStorage();
-    if (stored) {
-      setApiKeyState(stored);
-      setHasServerCookie(true);
-    }
-    refreshStatus().finally(() => setIsReady(true));
+    refreshStatus().then(() => {
+      const stored = readLocalStorage();
+      if (stored) setApiKeyState(stored);
+    }).finally(() => setIsReady(true));
   }, [refreshStatus]);
 
   const setApiKey = useCallback(async (key: string) => {
