@@ -28,6 +28,7 @@ export interface TickerAnalysis {
   phase: SetupPhase;
   phaseLabel: string;
   action: string;
+  holdTime: string;
   signals: SignalDetail[];
   gex: GexLevels | null;
   premium: number;

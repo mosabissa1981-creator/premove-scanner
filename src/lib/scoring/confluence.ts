@@ -318,7 +318,7 @@ export async function analyzeTicker(
 
   const score = signals.filter((s) => s.triggered).reduce((sum, s) => sum + s.points, 0);
   const maxScore = signals.reduce((sum, s) => sum + s.points, 0);
-  const { phase, phaseLabel, action, tier } = derivePhase(signals);
+  const { phase, phaseLabel, action, holdTime, tier } = derivePhase(signals);
 
   return {
     ticker,
@@ -328,6 +328,7 @@ export async function analyzeTicker(
     phase,
     phaseLabel,
     action,
+    holdTime,
     signals,
     gex,
     premium: entry.premium,

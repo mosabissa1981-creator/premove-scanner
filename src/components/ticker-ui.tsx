@@ -136,6 +136,9 @@ export function TickerCard({
             <p className="mt-0.5 truncate text-sm text-zinc-500">{analysis.companyName}</p>
           )}
           <p className="mt-2 text-xs leading-relaxed text-zinc-400">{analysis.action}</p>
+          <span className="mt-1.5 inline-block rounded bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-300">
+            {analysis.holdTime}
+          </span>
         </div>
         <ScoreRing score={analysis.score} maxScore={analysis.maxScore} />
       </div>
