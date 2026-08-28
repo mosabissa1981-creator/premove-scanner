@@ -1,60 +1,68 @@
 # PreMove Scanner
 
-A multi-layer **pre-move confluence scanner** powered by the [Unusual Whales API](https://unusualwhales.com/public-api). Catches stocks before big moves by combining volatility coils, dark pool accumulation, options flow, IV anomalies, and GEX levels.
+A multi-layer **pre-move confluence scanner** powered by the [Unusual Whales API](https://unusualwhales.com/public-api). Finds stocks **before** big moves using flat price + hidden call flow + dark pool buildup.
 
-## What it does
+## Live app
 
-| Layer | Signal | Unusual Whales endpoint |
-|-------|--------|-------------------------|
-| 1 — Coil | Volatility compression (BB squeeze) | `/api/stock/{ticker}/ohlc/1d` |
-| 1 — Accumulation | Dark pool buildup | `/api/darkpool/{ticker}` |
-| 2 — Conviction | Bullish flow / sweeps | Stock screener + flow alerts |
-| 2 — IV anomaly | IV rising while price flat | `/api/stock/{ticker}/iv-rank` |
-| 3 — Technical | Near resistance breakout | OHLC history |
-| 4 — Amplify | GEX flip proximity | `/api/stock/{ticker}/gex-levels` |
+Deploy to [Vercel](https://vercel.com) (recommended):
 
-**Score 6+** = High conviction watchlist  
-**Score 4–5** = Medium  
-**Score 2–3** = Watch
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/premove-scanner)
 
-## Setup (free trial)
-
-1. Sign up for the **Unusual Whales API trial** at [unusualwhales.com/public-api](https://unusualwhales.com/public-api)
-   - API Trial: ~$50/week (or free trial when offered)
-   - API Basic after trial: **$150/mo**
-2. Copy your Bearer API token from the dashboard
-3. Install and run:
+Or run locally:
 
 ```bash
 npm install
-cp .env.example .env.local
-# Add: UNUSUAL_WHALES_API_KEY=your_token
 npm run dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) → **Settings** → paste key → **Run Scan**
+Open http://localhost:3000 → **Settings** → paste your Unusual Whales API key.
+
+## Project location
+
+All source code lives in this repository:
+
+```
+premove-scanner/
+├── src/
+│   ├── app/           # Pages + API routes
+│   ├── components/    # UI components
+│   └── lib/           # UW client, scoring engine
+├── public/setup.html  # Mobile-friendly API key page
+└── package.json
+```
 
 ## Pages
 
-- **/** — Run confluence scan on top options activity
-- **/ticker/[SYMBOL]** — Deep dive on one ticker
-- **/watchlist** — Saved tickers
-- **/settings** — API key configuration
+| Route | Description |
+|-------|-------------|
+| `/` | Scanner — find early setups |
+| `/settings` | Save Unusual Whales API key |
+| `/setup.html` | Plain HTML key entry (works on iPhone) |
+| `/watchlist` | Saved tickers |
+| `/ticker/[SYMBOL]` | Single ticker deep dive |
 
 ## API routes
 
-- `GET /api/scan?limit=15&minPremium=1000000` — Full confluence scan
+- `GET /api/scan?limit=12` — Run confluence scan
 - `GET /api/ticker/AAPL` — Single ticker analysis
-- `GET /api/config` — Check server key status
+- `POST /api/settings/save` — Save API key (cookie)
+- `GET /api/config` — Check if key is configured
 
-Pass `x-uw-api-key` header to override env key.
+## Environment variables
 
-## Rate limits (API Basic)
+Optional server-side key (so users don't need to paste on each device):
 
-- 40,000 requests/day
-- 120 requests/minute
-- A scan of 15 tickers uses ~90 API calls
+```
+UNUSUAL_WHALES_API_KEY=your_bearer_token
+```
+
+## Unusual Whales API
+
+Sign up at [unusualwhales.com/public-api](https://unusualwhales.com/public-api)
+
+- API Trial: ~$50/week
+- API Basic: $150/mo after trial
 
 ## Disclaimer
 
-This tool is for educational and research purposes only. Not financial advice.
+Educational and research purposes only. Not financial advice.
