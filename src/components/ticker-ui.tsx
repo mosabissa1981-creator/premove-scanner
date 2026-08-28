@@ -1,4 +1,4 @@
-import type { SignalDetail, TickerAnalysis } from "@/lib/quantdata/types";
+import type { SignalDetail, TickerAnalysis } from "@/lib/unusualwhales/types";
 
 export function TierBadge({ tier }: { tier: TickerAnalysis["tier"] }) {
   const styles = {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { TickerAnalysis } from "@/lib/quantdata/types";
+import type { TickerAnalysis } from "@/lib/unusualwhales/types";
 import { ScoreRing, SignalList, TierBadge } from "@/components/ticker-ui";
 
 const WATCHLIST_KEY = "premove_watchlist";

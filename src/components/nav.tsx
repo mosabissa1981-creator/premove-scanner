@@ -24,7 +24,7 @@ export function Nav() {
             </div>
             <div>
               <div className="text-sm font-semibold leading-tight">PreMove Scanner</div>
-              <div className="text-[10px] text-zinc-500">Quant Data Confluence</div>
+              <div className="text-[10px] text-zinc-500">Unusual Whales Confluence</div>
             </div>
           </Link>
           <nav className="hidden items-center gap-1 sm:flex">

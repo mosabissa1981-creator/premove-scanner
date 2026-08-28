@@ -31,38 +31,47 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="mt-2 text-sm text-zinc-400">
-          Connect your Quant Data API key. Get one from{" "}
+          Connect your Unusual Whales API key. Start with the{" "}
+          <strong className="text-emerald-400">1-week free trial</strong>, then API Basic
+          at $150/mo from{" "}
           <a
-            href="https://quantdata.us/api"
+            href="https://unusualwhales.com/public-api"
             target="_blank"
             rel="noopener noreferrer"
             className="text-emerald-400 underline"
           >
-            quantdata.us/api
-          </a>{" "}
-          ($125–150/mo).
+            unusualwhales.com/public-api
+          </a>
+          .
         </p>
+      </div>
+
+      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm text-emerald-200">
+        <strong>Free trial tip:</strong> Sign up for the API Trial ($50/week or free trial
+        if offered) at Unusual Whales, copy your Bearer token, and paste it below.
+        Trial includes flow, dark pool, GEX, and screeners.
       </div>
 
       {serverKey && (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
-          Server-side API key detected in environment. You can still override with your own key below.
+          Server-side API key detected in environment. You can still override with your own
+          key below.
         </div>
       )}
 
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
         <label className="mb-2 block text-sm font-medium text-zinc-300">
-          Quant Data API Key
+          Unusual Whales API Key
         </label>
         <input
           type="password"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="qd_xxxxxxxxxxxxxxxx"
+          placeholder="Your Bearer token"
           className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2.5 font-mono text-sm outline-none focus:border-emerald-500"
         />
         <p className="mt-2 text-xs text-zinc-500">
-          Stored locally in your browser. Never sent anywhere except your own server API routes.
+          Stored locally in your browser. Sent only to your own server API routes.
         </p>
         <div className="mt-4 flex gap-3">
           <button
@@ -91,7 +100,7 @@ export default function SettingsPage() {
           For deployment, add to <code className="text-zinc-400">.env.local</code>:
         </p>
         <pre className="mt-2 overflow-x-auto rounded-lg bg-zinc-950 p-3 font-mono text-xs text-emerald-400">
-          QUANTDATA_API_KEY=your_key_here
+          UNUSUAL_WHALES_API_KEY=your_bearer_token_here
         </pre>
       </div>
     </div>

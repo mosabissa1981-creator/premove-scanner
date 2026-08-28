@@ -1,6 +1,24 @@
-import type { StockPriceBucket } from "@/lib/quantdata/types";
+import type { UwCandle } from "@/lib/unusualwhales/types";
 
-export function calculateCoilScore(bars: StockPriceBucket[]): number {
+export interface PriceBar {
+  openPrice: number;
+  highPrice: number;
+  lowPrice: number;
+  closePrice: number;
+}
+
+export function toPriceBars(candles: UwCandle[]): PriceBar[] {
+  return candles
+    .map((c) => ({
+      openPrice: parseFloat(c.open),
+      highPrice: parseFloat(c.high),
+      lowPrice: parseFloat(c.low),
+      closePrice: parseFloat(c.close),
+    }))
+    .filter((b) => !Number.isNaN(b.closePrice));
+}
+
+export function calculateCoilScore(bars: PriceBar[]): number {
   if (bars.length < 20) return 0;
 
   const closes = bars.map((b) => b.closePrice);
@@ -34,7 +52,7 @@ export function calculateCoilScore(bars: StockPriceBucket[]): number {
   return Math.round(Math.max(0, Math.min(100, compression * 100)));
 }
 
-export function calculatePriceChangePct(bars: StockPriceBucket[]): number {
+export function calculatePriceChangePct(bars: PriceBar[]): number {
   if (bars.length < 2) return 0;
   const first = bars[0].closePrice;
   const last = bars[bars.length - 1].closePrice;
@@ -42,7 +60,7 @@ export function calculatePriceChangePct(bars: StockPriceBucket[]): number {
   return ((last - first) / first) * 100;
 }
 
-export function isNearResistance(bars: StockPriceBucket[]): boolean {
+export function isNearResistance(bars: PriceBar[]): boolean {
   if (bars.length < 10) return false;
   const recent = bars.slice(-10);
   const highs = recent.map((b) => b.highPrice);

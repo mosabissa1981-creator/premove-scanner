@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
-import type { TickerAnalysis } from "@/lib/quantdata/types";
+import type { TickerAnalysis } from "@/lib/unusualwhales/types";
 import { TickerDetailView, WatchlistButton } from "@/components/ticker-detail";
 
 export default function TickerPage({ params }: { params: Promise<{ symbol: string }> }) {
@@ -19,7 +19,7 @@ export default function TickerPage({ params }: { params: Promise<{ symbol: strin
 
   useEffect(() => {
     if (!symbol || !apiKey) {
-      if (!apiKey) setError("Add your Quant Data API key in Settings.");
+      setError("Add your Unusual Whales API key in Settings.");
       setLoading(false);
       return;
     }

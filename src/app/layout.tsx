@@ -16,9 +16,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PreMove Scanner — Quant Data Confluence",
+  title: "PreMove Scanner — Unusual Whales Confluence",
   description:
-    "Catch stocks before the big move. Multi-layer confluence scanner powered by Quant Data API.",
+    "Catch stocks before the big move. Multi-layer confluence scanner powered by Unusual Whales API.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

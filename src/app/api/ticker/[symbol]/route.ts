@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { QuantDataClient, resolveApiKey } from "@/lib/quantdata/client";
+import { UnusualWhalesClient, resolveApiKey } from "@/lib/unusualwhales/client";
 import { analyzeTicker } from "@/lib/scoring/confluence";
-import type { GainersLosersResponse } from "@/lib/quantdata/types";
+import type { OptionsVolumeEntry } from "@/lib/unusualwhales/types";
+import type { UwDataResponse, UwOptionsVolume } from "@/lib/unusualwhales/types";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ symbol: string }> },
 ) {
-  const apiKey = resolveApiKey(request.headers.get("x-quantdata-api-key"));
+  const apiKey = resolveApiKey(request.headers.get("x-uw-api-key"));
   if (!apiKey) {
     return NextResponse.json({ error: "API key required" }, { status: 401 });
   }
@@ -16,19 +17,31 @@ export async function GET(
   const ticker = symbol.toUpperCase();
 
   try {
-    const client = new QuantDataClient(apiKey);
-    const gainers = (await client.gainersLosers({
-      filter: { tickers: [ticker] },
-    })) as GainersLosersResponse;
+    const client = new UnusualWhalesClient(apiKey);
+    const volRes = (await client.optionsVolume(ticker)) as UwDataResponse<UwOptionsVolume[]>;
+    const vol = volRes.data?.[0];
 
-    const entry = gainers.data[ticker] ?? {
-      bearishPremium: 0,
-      bullishPremium: 0,
-      premium: 0,
-      premiumRatio: 1,
-      tradeCount: 0,
-      volume: 0,
-    };
+    const entry: OptionsVolumeEntry = vol
+      ? {
+          bullishPremium: parseFloat(vol.bullish_premium) || 0,
+          bearishPremium: parseFloat(vol.bearish_premium) || 0,
+          premium:
+            (parseFloat(vol.call_premium) || 0) + (parseFloat(vol.put_premium) || 0),
+          premiumRatio:
+            parseFloat(vol.bullish_premium) > 0
+              ? parseFloat(vol.bearish_premium) / parseFloat(vol.bullish_premium)
+              : 1,
+          tradeCount: 0,
+          volume: (vol.call_volume ?? 0) + (vol.put_volume ?? 0),
+        }
+      : {
+          bearishPremium: 0,
+          bullishPremium: 0,
+          premium: 0,
+          premiumRatio: 1,
+          tradeCount: 0,
+          volume: 0,
+        };
 
     const analysis = await analyzeTicker(client, ticker, entry);
     return NextResponse.json(analysis);

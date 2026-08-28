@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
-import type { ScanResult, TickerAnalysis } from "@/lib/quantdata/types";
+import type { ScanResult, TickerAnalysis } from "@/lib/unusualwhales/types";
 import { TickerCard } from "@/components/ticker-ui";
 
 export default function ScannerPage() {
@@ -17,7 +17,7 @@ export default function ScannerPage() {
 
   const runScan = useCallback(async () => {
     if (!apiKey) {
-      setError("Add your Quant Data API key in Settings first.");
+      setError("Add your Unusual Whales API key in Settings first.");
       return;
     }
 
@@ -107,7 +107,7 @@ export default function ScannerPage() {
         {loading && (
           <div className="mt-6 flex items-center gap-3 text-sm text-zinc-400">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-emerald-500" />
-            Analyzing tickers via Quant Data API… this takes 1–3 minutes.
+            Analyzing tickers via Unusual Whales API… this takes 1–2 minutes.
           </div>
         )}
       </section>

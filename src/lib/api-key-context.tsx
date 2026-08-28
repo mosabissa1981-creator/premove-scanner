@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
-const STORAGE_KEY = "premove_api_key";
+const STORAGE_KEY = "premove_uw_api_key";
 
 interface ApiKeyContextValue {
   apiKey: string;
@@ -40,5 +40,5 @@ export function useApiKey() {
 }
 
 export function apiHeaders(apiKey: string): HeadersInit {
-  return apiKey ? { "x-quantdata-api-key": apiKey } : {};
+  return apiKey ? { "x-uw-api-key": apiKey } : {};
 }
