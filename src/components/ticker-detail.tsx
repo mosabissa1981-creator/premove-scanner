@@ -83,7 +83,7 @@ export function TickerDetailView({ analysis }: { analysis: TickerAnalysis }) {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-bold">{analysis.ticker}</h1>
-            <TierBadge tier={analysis.tier} />
+            <TierBadge tier={analysis.tier} label={analysis.phaseLabel} />
           </div>
           {analysis.companyName && (
             <p className="mt-1 text-zinc-400">{analysis.companyName}</p>
@@ -115,6 +115,11 @@ export function TickerDetailView({ analysis }: { analysis: TickerAnalysis }) {
           value={analysis.ivRank !== null ? `${analysis.ivRank.toFixed(0)}%` : "N/A"}
         />
       </div>
+
+      <section className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-5">
+        <h2 className="text-sm font-semibold text-zinc-300">What to do</h2>
+        <p className="mt-2 text-sm text-emerald-300">{analysis.action}</p>
+      </section>
 
       {analysis.gex && (
         <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">

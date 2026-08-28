@@ -1,5 +1,6 @@
 import { UnusualWhalesClient } from "@/lib/unusualwhales/client";
 import type {
+  CandidateMeta,
   OptionsVolumeEntry,
   SignalDetail,
   TickerAnalysis,
@@ -14,6 +15,7 @@ import type {
   UwStockScreenerRow,
 } from "@/lib/unusualwhales/types";
 import { computeGexLevelsFromUw } from "@/lib/scoring/gex";
+import { derivePhase } from "@/lib/scoring/phases";
 import {
   calculateCoilScore,
   calculatePriceChangePct,
@@ -63,88 +65,93 @@ function buildSignals(input: {
   gexFlipDistance: number | null;
   aggressiveFlow: boolean;
   bullishNetFlow: boolean;
+  inFlowAlerts: boolean;
 }): SignalDetail[] {
   const darkPoolElevated = input.darkPoolNotional > input.darkPoolBaseline * 1.5;
-  const bullishFlow = input.premiumRatio < 0.85 && input.premium >= 500_000;
+  const priceIsFlat = Math.abs(input.priceChangePct) < 3;
+  const coilTight = input.coilScore >= 65;
+  const bullishFlow = input.premiumRatio < 0.85 && input.premium >= 250_000;
   const ivRisingFlat =
-    input.ivRank !== null && input.ivRank >= 60 && Math.abs(input.priceChangePct) < 3;
+    input.ivRank !== null && input.ivRank >= 55 && priceIsFlat;
   const approachingFlip =
     input.gexFlipDistance !== null && Math.abs(input.gexFlipDistance) <= 2;
 
   return [
     {
       id: "coil",
-      label: "Volatility Coil",
-      points: 1,
-      triggered: input.coilScore >= 70,
-      description: `CoilScore ${input.coilScore}/100 — price range compressing`,
+      label: "Price Coiling",
+      phase: "accumulation",
+      points: 2,
+      triggered: coilTight && priceIsFlat,
+      description: `Coil ${input.coilScore}/100, price ${input.priceChangePct.toFixed(1)}% — spring winding`,
     },
     {
       id: "darkpool",
-      label: "Dark Pool Accumulation",
-      points: 1,
-      triggered: darkPoolElevated,
+      label: "Dark Pool Buildup",
+      phase: "accumulation",
+      points: 2,
+      triggered: darkPoolElevated && priceIsFlat,
       description: darkPoolElevated
-        ? `Dark pool $${(input.darkPoolNotional / 1e6).toFixed(1)}M (elevated)`
-        : `Dark pool $${(input.darkPoolNotional / 1e6).toFixed(1)}M (normal)`,
+        ? `$${(input.darkPoolNotional / 1e6).toFixed(1)}M off-exchange while price flat`
+        : `$${(input.darkPoolNotional / 1e6).toFixed(1)}M dark pool`,
     },
     {
       id: "flow",
-      label: "Bullish Options Flow",
+      label: "Call Sweeps / Flow",
+      phase: "conviction",
       points: 2,
-      triggered: bullishFlow || input.aggressiveFlow,
-      description: bullishFlow
-        ? `Premium ratio ${input.premiumRatio.toFixed(2)} — more call premium`
+      triggered: input.aggressiveFlow || input.inFlowAlerts || bullishFlow,
+      description: input.inFlowAlerts
+        ? "On today's unusual flow alerts"
         : input.aggressiveFlow
           ? "Sweep or large call flow detected"
-          : `Premium ratio ${input.premiumRatio.toFixed(2)}`,
+          : bullishFlow
+            ? "Bullish premium bias"
+            : "No urgent flow yet",
     },
     {
       id: "iv",
-      label: "IV Rising, Price Flat",
+      label: "IV Up, Price Flat",
+      phase: "conviction",
       points: 1,
       triggered: ivRisingFlat,
       description:
         input.ivRank !== null
-          ? `IV rank ${input.ivRank.toFixed(0)}% with ${input.priceChangePct.toFixed(1)}% price move`
+          ? `IV rank ${input.ivRank.toFixed(0)}% — market pricing a move`
           : "IV data unavailable",
     },
     {
       id: "technical",
-      label: "Near Resistance",
-      points: 1,
+      label: "At Breakout Level",
+      phase: "ignition",
+      points: 2,
       triggered: input.nearResistance,
       description: input.nearResistance
-        ? "Price within 2% of 10-day high"
-        : "Not at breakout level yet",
+        ? "Within 2% of 10-day high — breakout zone"
+        : "Not at resistance yet",
     },
     {
       id: "gex",
-      label: "GEX Flip Proximity",
+      label: "Near Gamma Flip",
+      phase: "amplify",
       points: 1,
       triggered: approachingFlip,
       description:
         input.gexFlipDistance !== null
-          ? `${input.gexFlipDistance.toFixed(1)}% from gamma flip`
-          : "Gamma flip level unavailable",
+          ? `${input.gexFlipDistance.toFixed(1)}% from flip — move will accelerate`
+          : "GEX flip level unavailable",
     },
     {
       id: "netflow",
       label: "Net Call Premium",
+      phase: "conviction",
       points: 1,
       triggered: input.bullishNetFlow,
       description: input.bullishNetFlow
-        ? "Net call premium exceeds puts"
-        : "No clear net call bias",
+        ? "Calls dominating puts today"
+        : "No net call bias",
     },
   ];
-}
-
-function scoreTier(score: number): TickerAnalysis["tier"] {
-  if (score >= 6) return "high";
-  if (score >= 4) return "medium";
-  if (score >= 2) return "watch";
-  return "low";
 }
 
 function toVolumeEntry(row: UwStockScreenerRow | UwOptionsVolume): OptionsVolumeEntry {
@@ -166,32 +173,121 @@ function toVolumeEntry(row: UwStockScreenerRow | UwOptionsVolume): OptionsVolume
   };
 }
 
+export async function discoverCandidates(
+  client: UnusualWhalesClient,
+  limit: number,
+): Promise<CandidateMeta[]> {
+  const [coilRes, flowRes] = await Promise.all([
+    client.stockScreener({
+      min_change: "-2",
+      max_change: "2",
+      min_net_call_premium: "250000",
+      order: "net_call_premium",
+      order_direction: "desc",
+    }) as Promise<UwDataResponse<UwStockScreenerRow[]>>,
+    client.flowAlerts({
+      unusual: true,
+      is_ask_side: true,
+      min_premium: 100000,
+      limit: 200,
+    }) as Promise<UwDataResponse<UwFlowAlert[]>>,
+  ]);
+
+  const coilTickers = new Map<string, UwStockScreenerRow>();
+  for (const row of coilRes.data ?? []) {
+    coilTickers.set(row.ticker, row);
+  }
+
+  const flowTickers = new Map<string, UwFlowAlert>();
+  for (const alert of flowRes.data ?? []) {
+    if (!flowTickers.has(alert.ticker)) {
+      flowTickers.set(alert.ticker, alert);
+    }
+  }
+
+  const merged = new Map<string, CandidateMeta>();
+
+  for (const [ticker, row] of coilTickers) {
+    merged.set(ticker, {
+      ticker,
+      sector: row.sector,
+      stockPrice: parseNum(row.close),
+      entry: toVolumeEntry(row),
+      inCoilScreener: true,
+      inFlowAlerts: flowTickers.has(ticker),
+    });
+  }
+
+  for (const [ticker, alert] of flowTickers) {
+    const existing = merged.get(ticker);
+    if (existing) {
+      existing.inFlowAlerts = true;
+      continue;
+    }
+    const price = parseNum(alert.underlying_price);
+    merged.set(ticker, {
+      ticker,
+      stockPrice: price,
+      entry: {
+        bullishPremium: parseNum(alert.total_ask_side_prem),
+        bearishPremium: parseNum(alert.total_bid_side_prem),
+        premium: parseNum(alert.total_premium),
+        premiumRatio: 0.5,
+        tradeCount: 0,
+        volume: 0,
+      },
+      inCoilScreener: false,
+      inFlowAlerts: true,
+    });
+  }
+
+  return [...merged.values()]
+    .sort((a, b) => {
+      const aBoost = (a.inCoilScreener ? 2 : 0) + (a.inFlowAlerts ? 3 : 0);
+      const bBoost = (b.inCoilScreener ? 2 : 0) + (b.inFlowAlerts ? 3 : 0);
+      if (bBoost !== aBoost) return bBoost - aBoost;
+      return b.entry.premium - a.entry.premium;
+    })
+    .slice(0, limit);
+}
+
 export async function analyzeTicker(
   client: UnusualWhalesClient,
-  ticker: string,
-  entry: OptionsVolumeEntry,
-  meta?: { sector?: string; companyName?: string; stockPrice?: number },
+  candidate: CandidateMeta,
   darkPoolBaseline = 5_000_000,
 ): Promise<TickerAnalysis> {
-  const ohlcRes = (await client.ohlc(ticker, "1d", 30)) as UwDataResponse<UwCandle[]>;
-  const darkRes = (await client.darkpool(ticker, 5)) as UwDataResponse<UwDarkpoolTrade[]>;
-  const gexRes = (await client.gexLevels(ticker)) as UwDataResponse<UwGexLevels>;
-  const ivRes = (await client.ivRank(ticker)) as UwDataResponse<UwIvRankRow[]>;
+  const { ticker, entry } = candidate;
+
+  const [ohlcRes, darkRes, gexRes, ivRes] = await Promise.all([
+    client.ohlc(ticker, "1d", 30) as Promise<UwDataResponse<UwCandle[]>>,
+    client.darkpool(ticker, 5) as Promise<UwDataResponse<UwDarkpoolTrade[]>>,
+    client.gexLevels(ticker) as Promise<UwDataResponse<UwGexLevels>>,
+    client.ivRank(ticker) as Promise<UwDataResponse<UwIvRankRow[]>>,
+  ]);
 
   let flowAlerts: UwFlowAlert[] = [];
+  let info: UwStockInfo = {};
+  let bullishNetFlow = false;
+
   try {
-    const flowRes = (await client.tickerFlowAlerts(ticker, 25)) as UwDataResponse<UwFlowAlert[]>;
+    const flowRes = (await client.tickerFlowAlerts(ticker, 15)) as UwDataResponse<UwFlowAlert[]>;
     flowAlerts = flowRes.data ?? [];
   } catch {
     flowAlerts = [];
   }
 
-  let info: UwStockInfo = {};
   try {
     const infoRes = (await client.stockInfo(ticker)) as UwDataResponse<UwStockInfo>;
     info = infoRes.data ?? {};
   } catch {
     info = {};
+  }
+
+  try {
+    const volRes = (await client.optionsVolume(ticker)) as UwDataResponse<UwOptionsVolume[]>;
+    if (volRes.data?.[0]) bullishNetFlow = hasBullishNetFlow(volRes.data[0]);
+  } catch {
+    bullishNetFlow = entry.bullishPremium > entry.bearishPremium;
   }
 
   const bars = toPriceBars(ohlcRes.data ?? []);
@@ -200,21 +296,10 @@ export async function analyzeTicker(
   const nearResistance = isNearResistance(bars);
   const darkPoolNotional = sumDarkPool(darkRes.data ?? []);
   const stockPrice =
-    meta?.stockPrice ??
-    (bars.length > 0 ? bars[bars.length - 1].closePrice : 0);
-  const gex = gexRes.data
-    ? computeGexLevelsFromUw(gexRes.data, stockPrice)
-    : null;
+    candidate.stockPrice ?? (bars.length > 0 ? bars[bars.length - 1].closePrice : 0);
+  const gex = gexRes.data ? computeGexLevelsFromUw(gexRes.data, stockPrice) : null;
   const ivRank = computeIvRank(ivRes.data ?? []);
   const aggressiveFlow = hasAggressiveFlow(flowAlerts);
-
-  let bullishNetFlow = false;
-  try {
-    const volRes = (await client.optionsVolume(ticker)) as UwDataResponse<UwOptionsVolume[]>;
-    if (volRes.data?.[0]) bullishNetFlow = hasBullishNetFlow(volRes.data[0]);
-  } catch {
-    bullishNetFlow = parseNum(entry.bullishPremium) > parseNum(entry.bearishPremium);
-  }
 
   const signals = buildSignals({
     coilScore,
@@ -228,16 +313,21 @@ export async function analyzeTicker(
     gexFlipDistance: gex?.flipDistancePct ?? null,
     aggressiveFlow,
     bullishNetFlow,
+    inFlowAlerts: candidate.inFlowAlerts,
   });
 
   const score = signals.filter((s) => s.triggered).reduce((sum, s) => sum + s.points, 0);
   const maxScore = signals.reduce((sum, s) => sum + s.points, 0);
+  const { phase, phaseLabel, action, tier } = derivePhase(signals);
 
   return {
     ticker,
     score,
     maxScore,
-    tier: scoreTier(score),
+    tier,
+    phase,
+    phaseLabel,
+    action,
     signals,
     gex,
     premium: entry.premium,
@@ -248,51 +338,53 @@ export async function analyzeTicker(
     coilScore,
     ivRank,
     priceChangePct,
-    sector: meta?.sector ?? info.sector,
-    companyName: meta?.companyName ?? info.full_name,
+    sector: candidate.sector ?? info.sector,
+    companyName: info.full_name,
     stockPrice,
+    inFlowAlerts: candidate.inFlowAlerts,
+    inCoilScreener: candidate.inCoilScreener,
   };
 }
 
 export async function runConfluenceScan(
   client: UnusualWhalesClient,
-  options: { limit?: number; minPremium?: number } = {},
-): Promise<{ results: TickerAnalysis[]; candidatesScreened: number; errors: string[] }> {
-  const limit = options.limit ?? 15;
-  const minPremium = options.minPremium ?? 1_000_000;
-
-  const screenerRes = (await client.stockScreener({
-    min_premium: String(minPremium),
-    order: "call_premium",
-    order_direction: "desc",
-  })) as UwDataResponse<UwStockScreenerRow[]>;
-
-  const candidates = (screenerRes.data ?? [])
-    .filter((row) => parseNum(row.call_premium) + parseNum(row.put_premium) >= minPremium)
-    .slice(0, limit);
+  options: { limit?: number } = {},
+): Promise<{
+  results: TickerAnalysis[];
+  candidatesScreened: number;
+  errors: string[];
+  strategy: string;
+}> {
+  const limit = options.limit ?? 12;
+  const candidates = await discoverCandidates(client, limit);
 
   const results: TickerAnalysis[] = [];
   const errors: string[] = [];
 
-  for (const row of candidates) {
+  for (const candidate of candidates) {
     try {
-      const entry = toVolumeEntry(row);
-      const analysis = await analyzeTicker(client, row.ticker, entry, {
-        sector: row.sector,
-        stockPrice: parseNum(row.close),
-      });
-      results.push(analysis);
-      await new Promise((r) => setTimeout(r, 250));
+      const analysis = await analyzeTicker(client, candidate);
+      if (analysis.tier !== "watch" || analysis.score >= 3) {
+        results.push(analysis);
+      }
+      await new Promise((r) => setTimeout(r, 200));
     } catch (err) {
-      errors.push(`${row.ticker}: ${err instanceof Error ? err.message : "Unknown error"}`);
+      errors.push(`${candidate.ticker}: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
   }
 
-  results.sort((a, b) => b.score - a.score || b.premium - a.premium);
+  const tierOrder = { ready: 0, "setting-up": 1, early: 2, watch: 3 };
+  results.sort(
+    (a, b) =>
+      tierOrder[a.tier] - tierOrder[b.tier] ||
+      b.score - a.score ||
+      (b.inFlowAlerts && b.inCoilScreener ? 1 : 0) - (a.inFlowAlerts && a.inCoilScreener ? 1 : 0),
+  );
 
   return {
     results,
     candidatesScreened: candidates.length,
     errors,
+    strategy: "coil-first",
   };
 }

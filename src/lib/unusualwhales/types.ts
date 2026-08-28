@@ -1,6 +1,9 @@
+export type SetupPhase = "accumulation" | "conviction" | "ignition" | "amplify";
+
 export interface SignalDetail {
   id: string;
   label: string;
+  phase: SetupPhase;
   points: number;
   triggered: boolean;
   description: string;
@@ -21,7 +24,10 @@ export interface TickerAnalysis {
   ticker: string;
   score: number;
   maxScore: number;
-  tier: "high" | "medium" | "low" | "watch";
+  tier: "ready" | "setting-up" | "early" | "watch";
+  phase: SetupPhase;
+  phaseLabel: string;
+  action: string;
   signals: SignalDetail[];
   gex: GexLevels | null;
   premium: number;
@@ -35,6 +41,8 @@ export interface TickerAnalysis {
   sector?: string;
   companyName?: string;
   stockPrice?: number;
+  inFlowAlerts?: boolean;
+  inCoilScreener?: boolean;
 }
 
 export interface ScanResult {
@@ -42,6 +50,7 @@ export interface ScanResult {
   candidatesScreened: number;
   results: TickerAnalysis[];
   errors: string[];
+  strategy: string;
 }
 
 export interface UwCandle {
@@ -133,4 +142,13 @@ export interface OptionsVolumeEntry {
   premiumRatio: number;
   tradeCount: number;
   volume: number;
+}
+
+export interface CandidateMeta {
+  ticker: string;
+  sector?: string;
+  stockPrice?: number;
+  entry: OptionsVolumeEntry;
+  inCoilScreener: boolean;
+  inFlowAlerts: boolean;
 }

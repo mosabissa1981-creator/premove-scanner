@@ -15,14 +15,12 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const limit = Number(searchParams.get("limit") ?? "15");
-  const minPremium = Number(searchParams.get("minPremium") ?? "1000000");
+  const limit = Number(searchParams.get("limit") ?? "12");
 
   try {
     const client = new UnusualWhalesClient(apiKey);
-    const { results, candidatesScreened, errors } = await runConfluenceScan(client, {
-      limit: Math.min(limit, 25),
-      minPremium,
+    const { results, candidatesScreened, errors, strategy } = await runConfluenceScan(client, {
+      limit: Math.min(limit, 20),
     });
 
     return NextResponse.json({
@@ -30,6 +28,7 @@ export async function GET(request: Request) {
       candidatesScreened,
       results,
       errors,
+      strategy,
     });
   } catch (err) {
     return NextResponse.json(

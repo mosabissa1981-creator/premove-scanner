@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { UnusualWhalesClient, resolveApiKey } from "@/lib/unusualwhales/client";
 import { analyzeTicker } from "@/lib/scoring/confluence";
-import type { OptionsVolumeEntry } from "@/lib/unusualwhales/types";
+import type { CandidateMeta, OptionsVolumeEntry } from "@/lib/unusualwhales/types";
 import type { UwDataResponse, UwOptionsVolume } from "@/lib/unusualwhales/types";
 
 export async function GET(
@@ -43,7 +43,14 @@ export async function GET(
           volume: 0,
         };
 
-    const analysis = await analyzeTicker(client, ticker, entry);
+    const candidate: CandidateMeta = {
+      ticker,
+      entry,
+      inCoilScreener: false,
+      inFlowAlerts: false,
+    };
+
+    const analysis = await analyzeTicker(client, candidate);
     return NextResponse.json(analysis);
   } catch (err) {
     return NextResponse.json(

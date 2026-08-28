@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
@@ -7,17 +8,15 @@ import type { ScanResult, TickerAnalysis } from "@/lib/unusualwhales/types";
 import { TickerCard } from "@/components/ticker-ui";
 
 export default function ScannerPage() {
-  const { apiKey } = useApiKey();
+  const { apiKey, hasKey } = useApiKey();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [limit, setLimit] = useState(15);
-  const [minPremium, setMinPremium] = useState(1_000_000);
 
   const runScan = useCallback(async () => {
     if (!apiKey) {
-      setError("Add your Unusual Whales API key in Settings first.");
+      setError("Add your API key first — tap Settings below.");
       return;
     }
 
@@ -25,13 +24,7 @@ export default function ScannerPage() {
     setError(null);
 
     try {
-      const params = new URLSearchParams({
-        limit: String(limit),
-        minPremium: String(minPremium),
-      });
-      const res = await fetch(`/api/scan?${params}`, {
-        headers: apiHeaders(apiKey),
-      });
+      const res = await fetch("/api/scan?limit=12", { headers: apiHeaders(apiKey) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Scan failed");
       setResult(data);
@@ -40,177 +33,148 @@ export default function ScannerPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiKey, limit, minPremium]);
+  }, [apiKey]);
 
-  const handleSelect = (ticker: string) => {
-    router.push(`/ticker/${ticker}`);
-  };
-
-  const highConviction = result?.results.filter((r) => r.tier === "high") ?? [];
-  const medium = result?.results.filter((r) => r.tier === "medium") ?? [];
-  const watch = result?.results.filter((r) => r.tier === "watch") ?? [];
+  const ready = result?.results.filter((r) => r.tier === "ready") ?? [];
+  const settingUp = result?.results.filter((r) => r.tier === "setting-up") ?? [];
+  const early = result?.results.filter((r) => r.tier === "early") ?? [];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 pb-8">
+      {!hasKey && (
+        <Link
+          href="/settings"
+          className="block rounded-xl border border-red-500/40 bg-red-500/10 p-4"
+        >
+          <p className="font-semibold text-red-200">Step 1: Add your API key</p>
+          <p className="mt-1 text-sm text-red-300/80">
+            Tap here to paste your Unusual Whales trial key →
+          </p>
+        </Link>
+      )}
+
       <section>
-        <h1 className="text-2xl font-bold tracking-tight">Pre-Move Confluence Scanner</h1>
-        <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-          Scans top options activity for volatility coils, dark pool accumulation, bullish
-          flow, IV anomalies, and GEX flip proximity — the signals that fire before big moves.
+        <h1 className="text-xl font-bold">Today&apos;s Early Setups</h1>
+        <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+          Finds stocks <strong className="text-zinc-300">before</strong> they move — flat price +
+          hidden call flow + dark pool buildup. Not the hottest names after the fact.
         </p>
       </section>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-        <div className="flex flex-wrap items-end gap-4">
-          <div>
-            <label className="mb-1 block text-xs text-zinc-500">Tickers to analyze</label>
-            <select
-              value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
-              className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm"
-            >
-              <option value={10}>Top 10</option>
-              <option value={15}>Top 15</option>
-              <option value={20}>Top 20</option>
-              <option value={25}>Top 25</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-zinc-500">Min options premium</label>
-            <select
-              value={minPremium}
-              onChange={(e) => setMinPremium(Number(e.target.value))}
-              className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm"
-            >
-              <option value={500000}>$500K+</option>
-              <option value={1000000}>$1M+</option>
-              <option value={3000000}>$3M+</option>
-              <option value={5000000}>$5M+</option>
-            </select>
-          </div>
-          <button
-            type="button"
-            onClick={runScan}
-            disabled={loading}
-            className="rounded-lg bg-emerald-500 px-6 py-2 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:opacity-50"
-          >
-            {loading ? "Scanning…" : "Run Scan"}
-          </button>
+      <button
+        type="button"
+        onClick={runScan}
+        disabled={loading || !hasKey}
+        className="w-full rounded-xl bg-emerald-500 py-4 text-base font-bold text-black transition hover:bg-emerald-400 disabled:opacity-40"
+      >
+        {loading ? "Finding early setups…" : "Find Early Setups"}
+      </button>
+
+      {error && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          {error}
         </div>
+      )}
 
-        {error && (
-          <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-            {error}
-          </div>
-        )}
-
-        {loading && (
-          <div className="mt-6 flex items-center gap-3 text-sm text-zinc-400">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-emerald-500" />
-            Analyzing tickers via Unusual Whales API… this takes 1–2 minutes.
-          </div>
-        )}
-      </section>
+      {loading && (
+        <div className="flex items-center gap-3 text-sm text-zinc-400">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-emerald-500" />
+          Scanning flat-price stocks with hidden flow… ~1 min
+        </div>
+      )}
 
       {result && (
         <>
-          <section className="grid gap-4 sm:grid-cols-4">
-            <StatCard label="Scanned" value={String(result.candidatesScreened)} />
-            <StatCard label="High Conviction" value={String(highConviction.length)} accent />
-            <StatCard label="Medium" value={String(medium.length)} />
-            <StatCard
-              label="Last scan"
-              value={new Date(result.scannedAt).toLocaleTimeString()}
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <MiniStat label="Ready" value={ready.length} accent />
+            <MiniStat label="Setting up" value={settingUp.length} />
+            <MiniStat label="Early" value={early.length} />
+          </div>
+
+          {ready.length > 0 && (
+            <Section
+              title="Ready to Break"
+              subtitle="At resistance with conviction — watch for volume"
+              items={ready}
+              onSelect={(t) => router.push(`/ticker/${t}`)}
             />
-          </section>
-
-          {result.errors.length > 0 && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-              {result.errors.length} ticker(s) failed: {result.errors.slice(0, 3).join("; ")}
-            </div>
+          )}
+          {settingUp.length > 0 && (
+            <Section
+              title="Setting Up"
+              subtitle="Smart money entering — add to watchlist"
+              items={settingUp}
+              onSelect={(t) => router.push(`/ticker/${t}`)}
+            />
+          )}
+          {early.length > 0 && (
+            <Section
+              title="Early Accumulation"
+              subtitle="Quiet buildup — too early to trade, monitor daily"
+              items={early}
+              onSelect={(t) => router.push(`/ticker/${t}`)}
+            />
           )}
 
-          {highConviction.length > 0 && (
-            <ResultSection title="High Conviction (Score 6+)" items={highConviction} onSelect={handleSelect} />
-          )}
-          {medium.length > 0 && (
-            <ResultSection title="Medium (Score 4–5)" items={medium} onSelect={handleSelect} />
-          )}
-          {watch.length > 0 && (
-            <ResultSection title="Watch List (Score 2–3)" items={watch} onSelect={handleSelect} />
+          {result.results.length === 0 && (
+            <p className="text-center text-sm text-zinc-500">
+              No strong setups right now. Try again after market open.
+            </p>
           )}
         </>
       )}
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/20 p-5">
-        <h2 className="text-sm font-semibold text-zinc-300">How scoring works</h2>
-        <div className="mt-3 grid gap-2 text-xs text-zinc-500 sm:grid-cols-2 lg:grid-cols-4">
-          <ScoreExplainer label="Volatility Coil" points="+1" desc="BB squeeze, range tightening" />
-          <ScoreExplainer label="Dark Pool" points="+1" desc="Off-exchange accumulation" />
-          <ScoreExplainer label="Bullish Flow" points="+2" desc="Call premium or sweeps" />
-          <ScoreExplainer label="IV / GEX / Technical" points="+1 each" desc="Pre-move confirmation" />
-        </div>
+      <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-xs text-zinc-500">
+        <p className="font-medium text-zinc-400">How this is different</p>
+        <ul className="mt-2 space-y-1.5">
+          <li>❌ Old: scan highest options premium (already moved)</li>
+          <li>✅ New: flat price + hidden call flow + dark pool first</li>
+          <li>✅ Then: confirm with sweeps, resistance, GEX flip</li>
+        </ul>
       </section>
     </div>
   );
 }
 
-function StatCard({
+function MiniStat({
   label,
   value,
   accent,
 }: {
   label: string;
-  value: string;
+  value: number;
   accent?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
-      <div className="text-xs text-zinc-500">{label}</div>
-      <div className={`mt-1 text-2xl font-bold ${accent ? "text-emerald-400" : "text-zinc-100"}`}>
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 py-3">
+      <div className={`text-2xl font-bold ${accent ? "text-emerald-400" : "text-zinc-200"}`}>
         {value}
       </div>
+      <div className="text-[10px] text-zinc-500">{label}</div>
     </div>
   );
 }
 
-function ResultSection({
+function Section({
   title,
+  subtitle,
   items,
   onSelect,
 }: {
   title: string;
+  subtitle: string;
   items: TickerAnalysis[];
   onSelect: (ticker: string) => void;
 }) {
   return (
     <section>
-      <h2 className="mb-4 text-lg font-semibold">{title}</h2>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <h2 className="font-semibold text-zinc-200">{title}</h2>
+      <p className="text-xs text-zinc-500">{subtitle}</p>
+      <div className="mt-3 space-y-3">
         {items.map((item) => (
           <TickerCard key={item.ticker} analysis={item} onSelect={onSelect} />
         ))}
       </div>
     </section>
-  );
-}
-
-function ScoreExplainer({
-  label,
-  points,
-  desc,
-}: {
-  label: string;
-  points: string;
-  desc: string;
-}) {
-  return (
-    <div className="rounded-lg border border-zinc-800 px-3 py-2">
-      <div className="flex items-center justify-between">
-        <span className="text-zinc-400">{label}</span>
-        <span className="font-mono text-emerald-500">{points}</span>
-      </div>
-      <p className="mt-0.5">{desc}</p>
-    </div>
   );
 }
