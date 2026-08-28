@@ -80,7 +80,7 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
     setHasServerCookie(true);
 
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetch("/api/settings/save", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },

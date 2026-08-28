@@ -1,68 +1,49 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useApiKey } from "@/lib/api-key-context";
 
-function normalizeKey(raw: string): string {
-  return raw.trim().replace(/^Bearer\s+/i, "");
-}
-
-export default function SettingsPage() {
-  const { setApiKey, clearApiKey, hasKey } = useApiKey();
+function SettingsForm() {
+  const { refreshStatus, hasKey } = useApiKey();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
   const [showKey, setShowKey] = useState(true);
   const [charCount, setCharCount] = useState(0);
-  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [errorMsg, setErrorMsg] = useState("");
 
-  const readKey = () => {
-    const fromRef = inputRef.current?.value ?? "";
-    return normalizeKey(fromRef);
-  };
+  const saved = searchParams.get("saved") === "1";
+  const cleared = searchParams.get("cleared") === "1";
+  const error = searchParams.get("error");
+
+  useEffect(() => {
+    if (saved || cleared) {
+      refreshStatus();
+    }
+    if (cleared) {
+      try {
+        localStorage.removeItem("premove_uw_api_key");
+      } catch {
+        // ignore
+      }
+    }
+  }, [saved, cleared, refreshStatus]);
 
   const updateCount = () => {
-    setCharCount(readKey().length);
+    const val = inputRef.current?.value ?? "";
+    setCharCount(val.trim().replace(/^Bearer\s+/i, "").length);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const key = readKey();
-    if (!key) {
-      setStatus("error");
-      setErrorMsg("Paste your API key in the field above first.");
-      return;
+  const errorMessage = (() => {
+    if (error === "empty") return "Paste your API key in the field above first.";
+    if (error === "short") {
+      const len = searchParams.get("len");
+      return `Key looks too short (${len ?? "?"} chars). Copy the full Bearer token.`;
     }
-
-    if (key.length < 20) {
-      setStatus("error");
-      setErrorMsg(`Key looks too short (${key.length} chars). Copy the full Bearer token.`);
-      return;
-    }
-
-    setStatus("saving");
-    setErrorMsg("");
-
-    const result = await setApiKey(key);
-    if (result.ok) {
-      setStatus("saved");
-      if (inputRef.current) inputRef.current.value = key;
-    } else {
-      setStatus("error");
-      setErrorMsg(result.error ?? "Could not save key");
-    }
-  };
-
-  const handleClear = async () => {
-    await clearApiKey();
-    if (inputRef.current) inputRef.current.value = "";
-    setCharCount(0);
-    setStatus("idle");
-    setErrorMsg("");
-  };
+    if (error === "invalid") return "Something went wrong. Try again.";
+    return "";
+  })();
 
   return (
     <div className="mx-auto max-w-lg space-y-6 pb-24">
@@ -71,15 +52,10 @@ export default function SettingsPage() {
         <p className="mt-2 text-sm text-zinc-400">
           Paste your Unusual Whales API key, then tap Save.
         </p>
+        <p className="mt-1 text-xs text-emerald-500/80">Mobile-friendly save (no JavaScript required)</p>
       </div>
 
-      {hasKey && status !== "saved" && (
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
-          API key is saved. Go to Scanner to run a scan.
-        </div>
-      )}
-
-      {status === "saved" && (
+      {saved && (
         <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-4 py-4 text-center">
           <p className="text-lg font-semibold text-emerald-300">Saved!</p>
           <p className="mt-1 text-sm text-emerald-400/80">Your API key is connected.</p>
@@ -93,8 +69,22 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {cleared && (
+        <div className="rounded-xl border border-zinc-700 bg-zinc-900/40 px-4 py-3 text-sm text-zinc-300">
+          API key cleared.
+        </div>
+      )}
+
+      {hasKey && !saved && !cleared && (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          API key is saved. Go to Scanner to run a scan.
+        </div>
+      )}
+
+      {/* Native HTML form — works on iOS Safari without JavaScript */}
       <form
-        onSubmit={handleSubmit}
+        method="POST"
+        action="/api/settings/save"
         className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4"
       >
         <label htmlFor="api-key" className="mb-2 block text-sm font-medium text-zinc-300">
@@ -107,17 +97,15 @@ export default function SettingsPage() {
             id="api-key"
             name="apiKey"
             type="text"
-            defaultValue=""
             onInput={updateCount}
             onPaste={() => setTimeout(updateCount, 100)}
-            onBlur={updateCount}
             placeholder="Paste token here (UUID format)"
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck={false}
             className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3.5 pr-16 font-mono text-sm outline-none focus:border-emerald-500"
-            style={showKey ? undefined : { WebkitTextSecurity: "disc" } as React.CSSProperties}
+            style={showKey ? undefined : ({ WebkitTextSecurity: "disc" } as React.CSSProperties)}
           />
           <button
             type="button"
@@ -134,25 +122,25 @@ export default function SettingsPage() {
             : "Paste your key, then check the character count appears"}
         </p>
 
-        {status === "error" && (
+        {errorMessage && (
           <p className="mt-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-            {errorMsg}
+            {errorMessage}
           </p>
         )}
 
         <button
           type="submit"
-          disabled={status === "saving"}
-          className="mt-4 w-full touch-manipulation rounded-xl bg-emerald-500 py-4 text-base font-bold text-black active:scale-[0.98] disabled:opacity-50"
+          className="mt-4 w-full touch-manipulation rounded-xl bg-emerald-500 py-4 text-base font-bold text-black active:scale-[0.98]"
           style={{ WebkitTapHighlightColor: "transparent" }}
         >
-          {status === "saving" ? "Saving…" : "Save Key"}
+          Save Key
         </button>
+      </form>
 
+      <form method="POST" action="/api/settings/clear">
         <button
-          type="button"
-          onClick={handleClear}
-          className="mt-2 w-full touch-manipulation rounded-xl border border-zinc-700 py-3 text-sm text-zinc-400"
+          type="submit"
+          className="w-full touch-manipulation rounded-xl border border-zinc-700 py-3 text-sm text-zinc-400"
         >
           Clear Key
         </button>
@@ -174,5 +162,13 @@ export default function SettingsPage() {
         ← Back to Scanner
       </Link>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="text-sm text-zinc-400">Loading settings…</div>}>
+      <SettingsForm />
+    </Suspense>
   );
 }
