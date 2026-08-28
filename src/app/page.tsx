@@ -15,7 +15,7 @@ export default function ScannerPage() {
   const [error, setError] = useState<string | null>(null);
 
   const runScan = useCallback(async () => {
-    if (!apiKey) {
+    if (!hasKey) {
       setError("Add your API key first — tap Settings below.");
       return;
     }
@@ -24,7 +24,10 @@ export default function ScannerPage() {
     setError(null);
 
     try {
-      const res = await fetch("/api/scan?limit=12", { headers: apiHeaders(apiKey) });
+      const res = await fetch("/api/scan?limit=12", {
+        headers: apiHeaders(apiKey),
+        credentials: "same-origin",
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Scan failed");
       setResult(data);
@@ -33,7 +36,7 @@ export default function ScannerPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiKey]);
+  }, [apiKey, hasKey]);
 
   const ready = result?.results.filter((r) => r.tier === "ready") ?? [];
   const settingUp = result?.results.filter((r) => r.tier === "setting-up") ?? [];

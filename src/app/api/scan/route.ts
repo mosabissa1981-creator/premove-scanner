@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { UnusualWhalesClient, resolveApiKey } from "@/lib/unusualwhales/client";
 import { runConfluenceScan } from "@/lib/scoring/confluence";
 
 export async function GET(request: Request) {
-  const apiKey = resolveApiKey(request.headers.get("x-uw-api-key"));
+  const cookieStore = await cookies();
+  const apiKey = resolveApiKey(
+    request.headers.get("x-uw-api-key"),
+    cookieStore.get("uw_api_key")?.value,
+  );
   if (!apiKey) {
     return NextResponse.json(
       {

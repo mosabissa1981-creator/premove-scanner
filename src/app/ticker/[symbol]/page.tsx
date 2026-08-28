@@ -7,7 +7,7 @@ import type { TickerAnalysis } from "@/lib/unusualwhales/types";
 import { TickerDetailView, WatchlistButton } from "@/components/ticker-detail";
 
 export default function TickerPage({ params }: { params: Promise<{ symbol: string }> }) {
-  const { apiKey } = useApiKey();
+  const { apiKey, hasKey } = useApiKey();
   const [symbol, setSymbol] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<TickerAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
@@ -18,14 +18,18 @@ export default function TickerPage({ params }: { params: Promise<{ symbol: strin
   }, [params]);
 
   useEffect(() => {
-    if (!symbol || !apiKey) {
+    if (!symbol) return;
+    if (!apiKey && !hasKey) {
       setError("Add your Unusual Whales API key in Settings.");
       setLoading(false);
       return;
     }
 
     setLoading(true);
-    fetch(`/api/ticker/${symbol}`, { headers: apiHeaders(apiKey) })
+    fetch(`/api/ticker/${symbol}`, {
+      headers: apiHeaders(apiKey),
+      credentials: "same-origin",
+    })
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Failed to load");
@@ -34,7 +38,7 @@ export default function TickerPage({ params }: { params: Promise<{ symbol: strin
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed"))
       .finally(() => setLoading(false));
-  }, [symbol, apiKey]);
+  }, [symbol, apiKey, hasKey]);
 
   if (loading) {
     return (

@@ -1,108 +1,143 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useApiKey } from "@/lib/api-key-context";
 
 export default function SettingsPage() {
-  const { apiKey, setApiKey } = useApiKey();
-  const [input, setInput] = useState(apiKey);
-  const [saved, setSaved] = useState(false);
-  const [serverKey, setServerKey] = useState(false);
+  const { apiKey, setApiKey, clearApiKey, hasKey } = useApiKey();
+  const router = useRouter();
+  const [input, setInput] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
-    setInput(apiKey);
+    if (apiKey) setInput(apiKey);
   }, [apiKey]);
 
-  useEffect(() => {
-    fetch("/api/config")
-      .then((r) => r.json())
-      .then((d) => setServerKey(d.hasServerKey))
-      .catch(() => {});
-  }, []);
+  const save = async () => {
+    if (!input.trim()) {
+      setStatus("error");
+      setErrorMsg("Paste your Unusual Whales API key first.");
+      return;
+    }
 
-  const save = () => {
-    setApiKey(input.trim());
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setStatus("saving");
+    setErrorMsg("");
+
+    const result = await setApiKey(input);
+    if (result.ok) {
+      setStatus("saved");
+    } else {
+      setStatus("error");
+      setErrorMsg(result.error ?? "Could not save key");
+    }
+  };
+
+  const clear = async () => {
+    await clearApiKey();
+    setInput("");
+    setStatus("idle");
+    setErrorMsg("");
   };
 
   return (
-    <div className="mx-auto max-w-lg space-y-8">
+    <div className="mx-auto max-w-lg space-y-6 pb-8">
       <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
+        <h1 className="text-xl font-bold">Settings</h1>
         <p className="mt-2 text-sm text-zinc-400">
-          Connect your Unusual Whales API key. Start with the{" "}
-          <strong className="text-emerald-400">1-week free trial</strong>, then API Basic
-          at $150/mo from{" "}
-          <a
-            href="https://unusualwhales.com/public-api"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-emerald-400 underline"
-          >
-            unusualwhales.com/public-api
-          </a>
-          .
+          Paste your Unusual Whales API Bearer token below.
         </p>
       </div>
 
-      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm text-emerald-200">
-        <strong>Free trial tip:</strong> Sign up for the API Trial ($50/week or free trial
-        if offered) at Unusual Whales, copy your Bearer token, and paste it below.
-        Trial includes flow, dark pool, GEX, and screeners.
-      </div>
-
-      {serverKey && (
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
-          Server-side API key detected in environment. You can still override with your own
-          key below.
+      {hasKey && status !== "saved" && (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          API key is saved. Go to Scanner to run a scan.
         </div>
       )}
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-        <label className="mb-2 block text-sm font-medium text-zinc-300">
-          Unusual Whales API Key
-        </label>
-        <input
-          type="password"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Your Bearer token"
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2.5 font-mono text-sm outline-none focus:border-emerald-500"
-        />
-        <p className="mt-2 text-xs text-zinc-500">
-          Stored locally in your browser. Sent only to your own server API routes.
-        </p>
-        <div className="mt-4 flex gap-3">
+      {status === "saved" && (
+        <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-4 py-4 text-center">
+          <p className="font-semibold text-emerald-300">Key saved successfully!</p>
           <button
             type="button"
-            onClick={save}
-            className="rounded-lg bg-emerald-500 px-5 py-2 text-sm font-semibold text-black hover:bg-emerald-400"
+            onClick={() => router.push("/")}
+            className="mt-3 w-full rounded-xl bg-emerald-500 py-3 font-bold text-black"
           >
-            {saved ? "Saved!" : "Save Key"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setInput("");
-              setApiKey("");
-            }}
-            className="rounded-lg border border-zinc-700 px-5 py-2 text-sm text-zinc-400 hover:border-zinc-500"
-          >
-            Clear
+            Go to Scanner →
           </button>
         </div>
+      )}
+
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+        <label htmlFor="api-key" className="mb-2 block text-sm font-medium text-zinc-300">
+          Unusual Whales API Key
+        </label>
+        <div className="relative">
+          <input
+            id="api-key"
+            type={showKey ? "text" : "password"}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onPaste={(e) => {
+              const pasted = e.clipboardData.getData("text");
+              if (pasted) setInput(pasted.trim());
+            }}
+            placeholder="Paste Bearer token here"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3.5 pr-16 font-mono text-sm outline-none focus:border-emerald-500"
+          />
+          <button
+            type="button"
+            onClick={() => setShowKey((v) => !v)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-zinc-400"
+          >
+            {showKey ? "Hide" : "Show"}
+          </button>
+        </div>
+
+        {status === "error" && (
+          <p className="mt-2 text-sm text-red-400">{errorMsg}</p>
+        )}
+
+        <button
+          type="button"
+          onClick={save}
+          disabled={status === "saving"}
+          className="mt-4 w-full rounded-xl bg-emerald-500 py-4 text-base font-bold text-black active:bg-emerald-600 disabled:opacity-50"
+        >
+          {status === "saving" ? "Saving…" : status === "saved" ? "Saved ✓" : "Save Key"}
+        </button>
+
+        <button
+          type="button"
+          onClick={clear}
+          className="mt-2 w-full rounded-xl border border-zinc-700 py-3 text-sm text-zinc-400"
+        >
+          Clear Key
+        </button>
       </div>
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/20 p-5 text-sm text-zinc-500">
-        <h2 className="font-semibold text-zinc-300">Environment setup (optional)</h2>
-        <p className="mt-2">
-          For deployment, add to <code className="text-zinc-400">.env.local</code>:
-        </p>
-        <pre className="mt-2 overflow-x-auto rounded-lg bg-zinc-950 p-3 font-mono text-xs text-emerald-400">
-          UNUSUAL_WHALES_API_KEY=your_bearer_token_here
-        </pre>
-      </div>
+      <p className="text-center text-xs text-zinc-500">
+        Get your key at{" "}
+        <a
+          href="https://unusualwhales.com/public-api"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-emerald-400 underline"
+        >
+          unusualwhales.com/public-api
+        </a>
+      </p>
+
+      <Link href="/" className="block text-center text-sm text-zinc-400 underline">
+        ← Back to Scanner
+      </Link>
     </div>
   );
 }

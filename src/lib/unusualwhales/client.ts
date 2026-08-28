@@ -86,6 +86,11 @@ export class UnusualWhalesClient {
   }
 }
 
-export function resolveApiKey(headerKey?: string | null): string | null {
-  return headerKey?.trim() || process.env.UNUSUAL_WHALES_API_KEY?.trim() || null;
+export function resolveApiKey(headerKey?: string | null, cookieKey?: string | null): string | null {
+  return (
+    headerKey?.trim() ||
+    cookieKey?.trim() ||
+    process.env.UNUSUAL_WHALES_API_KEY?.trim() ||
+    null
+  );
 }

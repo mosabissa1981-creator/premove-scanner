@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { UnusualWhalesClient, resolveApiKey } from "@/lib/unusualwhales/client";
 import { analyzeTicker } from "@/lib/scoring/confluence";
 import type { CandidateMeta, OptionsVolumeEntry } from "@/lib/unusualwhales/types";
@@ -8,7 +9,11 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ symbol: string }> },
 ) {
-  const apiKey = resolveApiKey(request.headers.get("x-uw-api-key"));
+  const cookieStore = await cookies();
+  const apiKey = resolveApiKey(
+    request.headers.get("x-uw-api-key"),
+    cookieStore.get("uw_api_key")?.value,
+  );
   if (!apiKey) {
     return NextResponse.json({ error: "API key required" }, { status: 401 });
   }
