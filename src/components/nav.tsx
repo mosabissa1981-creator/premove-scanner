@@ -18,40 +18,42 @@ export function Nav() {
   return (
     <>
       <header className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-sm font-bold text-black">
+        <div className="mx-auto flex w-full max-w-lg items-center justify-between gap-2 px-4 py-3 sm:max-w-7xl sm:gap-4 sm:px-6 sm:py-4">
+          <Link href="/" className="min-w-0 flex items-center gap-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-sm font-bold text-black">
               PM
             </div>
-            <div>
-              <div className="text-sm font-semibold leading-tight">PreMove Scanner</div>
-              <div className="text-[10px] text-zinc-500">Unusual Whales Confluence</div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold leading-tight">PreMove Scanner</div>
+              <div className="hidden text-[10px] text-zinc-500 sm:block">Unusual Whales Confluence</div>
             </div>
           </Link>
 
           <Link
             href="/settings"
-            className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 transition ${
+            className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1.5 transition sm:gap-2 sm:px-3 ${
               hasKey
                 ? "border-emerald-500/30 bg-emerald-500/10"
                 : "border-red-500/30 bg-red-500/10"
             }`}
           >
             <span
-              className={`h-2 w-2 rounded-full ${hasKey ? "bg-emerald-500" : "bg-red-500"}`}
+              className={`h-2 w-2 shrink-0 rounded-full ${hasKey ? "bg-emerald-500" : "bg-red-500"}`}
             />
-            <span className={`text-xs font-medium ${hasKey ? "text-emerald-300" : "text-red-300"}`}>
+            <span
+              className={`hidden text-xs font-medium sm:inline ${hasKey ? "text-emerald-300" : "text-red-300"}`}
+            >
               {hasKey ? "API connected" : "Add API key"}
             </span>
           </Link>
         </div>
 
-        <nav className="flex border-t border-zinc-800 sm:hidden">
+        <nav className="mx-auto flex w-full max-w-lg border-t border-zinc-800 sm:hidden sm:max-w-7xl">
           {links.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className={`flex-1 py-2.5 text-center text-xs font-medium transition ${
+              className={`min-w-0 flex-1 truncate px-1 py-2.5 text-center text-[10px] font-medium transition ${
                 pathname === link.href
                   ? "bg-zinc-800 text-emerald-400"
                   : "text-zinc-400"
@@ -63,7 +65,7 @@ export function Nav() {
         </nav>
       </header>
 
-      <nav className="mx-auto hidden max-w-7xl gap-1 px-4 pb-2 sm:flex sm:px-6">
+      <nav className="mx-auto hidden w-full max-w-lg gap-1 px-4 pb-2 sm:flex sm:max-w-7xl sm:px-6">
         {links.map((link) => (
           <Link
             key={link.href}

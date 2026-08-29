@@ -78,11 +78,13 @@ export default function TickerPage({ params }: { params: Promise<{ symbol: strin
   }
 
   return (
-    <div className="space-y-6">
-      <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-300">
-        ← Back to Scanner
-      </Link>
-      <WatchlistButton ticker={analysis.ticker} />
+    <div className="min-w-0 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-300">
+          ← Back to Scanner
+        </Link>
+        <WatchlistButton ticker={analysis.ticker} />
+      </div>
       <TickerDetailView analysis={analysis} />
     </div>
   );
