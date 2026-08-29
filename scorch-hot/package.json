@@ -12,18 +12,18 @@
     "pages:dev": "npm run build && wrangler pages dev dist --port 8788"
   },
   "dependencies": {
+    "@vitejs/plugin-react": "^4.4.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "vite": "^6.3.5",
     "wrangler": "^4.14.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260828.1",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
-    "@vitejs/plugin-react": "^4.4.1",
     "tsx": "^4.23.2",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5",
     "vitest": "^3.1.2"
   }
 }
