@@ -43,7 +43,7 @@ premove-scanner/
 
 ## API routes
 
-- `GET /api/scan?limit=12` — Run confluence scan
+- `GET /api/scan?limit=20` — Run confluence scan
 - `GET /api/ticker/AAPL` — Single ticker analysis
 - `POST /api/settings/save` — Save API key (cookie)
 - `GET /api/config` — Check if key is configured

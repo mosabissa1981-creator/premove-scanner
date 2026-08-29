@@ -26,7 +26,7 @@ export default function ScannerPage() {
     setError(null);
 
     try {
-      const res = await fetch("/api/scan?limit=12", {
+      const res = await fetch("/api/scan?limit=20", {
         headers: apiHeaders(apiKey),
         credentials: "same-origin",
       });
