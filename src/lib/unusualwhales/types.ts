@@ -27,6 +27,9 @@ export interface TickerAnalysis {
   phase: SetupPhase;
   phaseLabel: string;
   action: string;
+  holdTime: string;
+  resistanceLevel?: number | null;
+  stopLevel?: number | null;
   signals: SignalDetail[];
   gex: GexLevels | null;
   premium: number;

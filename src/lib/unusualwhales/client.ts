@@ -7,6 +7,7 @@ const CLIENT_API_ID = "100001";
 const MAX_RETRIES = 3;
 const BASE_BACKOFF_MS = 400;
 const MAX_BACKOFF_MS = 8_000;
+const REQUEST_TIMEOUT_MS = 20_000;
 const MAX_CACHE_ENTRIES = 500;
 
 export class UnusualWhalesError extends Error {
@@ -83,31 +84,49 @@ export class UnusualWhalesClient {
 
   private async request<T>(url: string): Promise<T> {
     for (let attempt = 0; ; attempt += 1) {
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          "UW-CLIENT-API-ID": CLIENT_API_ID,
-          Accept: "application/json",
-        },
-        cache: "no-store",
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-      if (response.ok) {
-        return response.json() as Promise<T>;
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "UW-CLIENT-API-ID": CLIENT_API_ID,
+            Accept: "application/json",
+          },
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        if (response.ok) {
+          return (await response.json()) as T;
+        }
+
+        const retryable = response.status === 429 || response.status >= 500;
+        if (retryable && attempt < MAX_RETRIES) {
+          await sleep(backoffMs(attempt, response.headers.get("retry-after")));
+          continue;
+        }
+
+        const text = await response.text();
+        throw new UnusualWhalesError(
+          text || `Unusual Whales API error (${response.status})`,
+          response.status,
+        );
+      } catch (err) {
+        // Surface explicit API errors immediately; retry transient
+        // network/abort/timeout failures with backoff.
+        if (err instanceof UnusualWhalesError) throw err;
+        if (attempt >= MAX_RETRIES) {
+          throw new UnusualWhalesError(
+            err instanceof Error ? err.message : "Request failed",
+          );
+        }
+        await sleep(backoffMs(attempt, null));
+      } finally {
+        clearTimeout(timeout);
       }
-
-      const retryable = response.status === 429 || response.status >= 500;
-      if (retryable && attempt < MAX_RETRIES) {
-        await sleep(backoffMs(attempt, response.headers.get("retry-after")));
-        continue;
-      }
-
-      const text = await response.text();
-      throw new UnusualWhalesError(
-        text || `Unusual Whales API error (${response.status})`,
-        response.status,
-      );
     }
   }
 
@@ -170,14 +189,7 @@ export class UnusualWhalesClient {
   }
 
   ohlc(ticker: string, candleSize: "1d" = "1d", limit = 30) {
-    return this.get(
-      `/api/stock/${ticker}/ohlc/${candleSize}`,
-      {
-        limit,
-        timeframe: "1m",
-      },
-      300_000,
-    );
+    return this.get(`/api/stock/${ticker}/ohlc/${candleSize}`, { limit }, 300_000);
   }
 
   ivRank(ticker: string) {

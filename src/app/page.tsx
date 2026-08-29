@@ -57,10 +57,10 @@ export default function ScannerPage() {
       )}
 
       <section>
-        <h1 className="text-xl font-bold">Today&apos;s Early Setups</h1>
+        <h1 className="text-xl font-bold">Swing Trade Setups</h1>
         <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-          Finds stocks <strong className="text-zinc-300">before</strong> they move — flat price +
-          hidden call flow + dark pool buildup. Not the hottest names after the fact.
+          Multi-day swing candidates — flat price + hidden flow before the move.
+          Hold <strong className="text-zinc-300">3–15 days</strong>, not scalps.
         </p>
       </section>
 
@@ -70,7 +70,7 @@ export default function ScannerPage() {
         disabled={loading || !hasKey}
         className="w-full rounded-xl bg-emerald-500 py-4 text-base font-bold text-black transition hover:bg-emerald-400 disabled:opacity-40"
       >
-        {loading ? "Finding early setups…" : "Find Early Setups"}
+        {loading ? "Scanning swing setups…" : "Find Swing Setups"}
       </button>
 
       {error && (
@@ -88,6 +88,13 @@ export default function ScannerPage() {
 
       {result && (
         <>
+          <p className="text-center text-xs text-zinc-500">
+            Scanned {result.candidatesScreened} candidates
+            {result.scannedAt && (
+              <> · {new Date(result.scannedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</>
+            )}
+          </p>
+
           <div className="grid grid-cols-3 gap-2 text-center">
             <MiniStat label="Ready" value={ready.length} accent />
             <MiniStat label="Setting up" value={settingUp.length} />
@@ -96,24 +103,24 @@ export default function ScannerPage() {
 
           {ready.length > 0 && (
             <Section
-              title="Ready to Break"
-              subtitle="At resistance with conviction — watch for volume"
+              title="Ready to Swing"
+              subtitle="Breakout zone — enter on daily close above resistance (3–10 day hold)"
               items={ready}
               onSelect={(t) => router.push(`/ticker/${t}`)}
             />
           )}
           {settingUp.length > 0 && (
             <Section
-              title="Setting Up"
-              subtitle="Smart money entering — add to watchlist"
+              title="Watchlist — Setting Up"
+              subtitle="Smart money loading — wait for breakout (5–15 day swing)"
               items={settingUp}
               onSelect={(t) => router.push(`/ticker/${t}`)}
             />
           )}
           {early.length > 0 && (
             <Section
-              title="Early Accumulation"
-              subtitle="Quiet buildup — too early to trade, monitor daily"
+              title="Early — Too Soon"
+              subtitle="Accumulation phase — monitor daily, no entry yet"
               items={early}
               onSelect={(t) => router.push(`/ticker/${t}`)}
             />
@@ -124,15 +131,24 @@ export default function ScannerPage() {
               No strong setups right now. Try again after market open.
             </p>
           )}
+
+          {result.errors.length > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+              {result.errors.length} ticker{result.errors.length !== 1 ? "s" : ""} skipped:{" "}
+              {result.errors.slice(0, 3).join(" · ")}
+              {result.errors.length > 3 && ` (+${result.errors.length - 3} more)`}
+            </div>
+          )}
         </>
       )}
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-xs text-zinc-500">
-        <p className="font-medium text-zinc-400">How this is different</p>
+        <p className="font-medium text-zinc-400">Swing trade playbook</p>
         <ul className="mt-2 space-y-1.5">
-          <li>❌ Old: scan highest options premium (already moved)</li>
-          <li>✅ New: flat price + hidden call flow + dark pool first</li>
-          <li>✅ Then: confirm with sweeps, resistance, GEX flip</li>
+          <li>✅ <strong className="text-zinc-400">Ready to Swing</strong> — enter on breakout, hold 3–10 days</li>
+          <li>👀 <strong className="text-zinc-400">Setting Up</strong> — watchlist, enter when it hits Ready</li>
+          <li>⏳ <strong className="text-zinc-400">Early</strong> — too soon, check back daily</li>
+          <li>🔄 Re-scan each morning — setups change as flow builds</li>
         </ul>
       </section>
     </div>

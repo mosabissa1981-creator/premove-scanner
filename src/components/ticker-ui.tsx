@@ -32,7 +32,7 @@ export function TierBadge({ tier, label }: { tier: TickerAnalysis["tier"]; label
 export function ScoreRing({ score, maxScore }: { score: number; maxScore: number }) {
   const pct = maxScore > 0 ? (score / maxScore) * 100 : 0;
   const color =
-    score >= 8 ? "text-emerald-400" : score >= 5 ? "text-sky-400" : "text-amber-400";
+    score >= 7 ? "text-emerald-400" : score >= 4 ? "text-sky-400" : "text-amber-400";
 
   return (
     <div className="flex flex-col items-center">
@@ -40,7 +40,7 @@ export function ScoreRing({ score, maxScore }: { score: number; maxScore: number
       <div className="text-xs text-zinc-500">/ {maxScore}</div>
       <div className="mt-2 h-1.5 w-16 overflow-hidden rounded-full bg-zinc-800">
         <div
-          className={`h-full rounded-full ${score >= 8 ? "bg-emerald-500" : score >= 5 ? "bg-sky-500" : "bg-amber-500"}`}
+          className={`h-full rounded-full ${score >= 7 ? "bg-emerald-500" : score >= 4 ? "bg-sky-500" : "bg-amber-500"}`}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -136,6 +136,9 @@ export function TickerCard({
             <p className="mt-0.5 truncate text-sm text-zinc-500">{analysis.companyName}</p>
           )}
           <p className="mt-2 text-xs leading-relaxed text-zinc-400">{analysis.action}</p>
+          <span className="mt-1.5 inline-block rounded bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-300">
+            {analysis.holdTime}
+          </span>
         </div>
         <ScoreRing score={analysis.score} maxScore={analysis.maxScore} />
       </div>
@@ -158,6 +161,11 @@ export function TickerCard({
           {analysis.priceChangePct >= 0 ? "+" : ""}
           {analysis.priceChangePct.toFixed(1)}%
         </span>
+        {analysis.resistanceLevel && (
+          <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
+            R ${analysis.resistanceLevel.toFixed(0)}
+          </span>
+        )}
       </div>
     </button>
   );

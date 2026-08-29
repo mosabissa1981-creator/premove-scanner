@@ -19,6 +19,8 @@ import { derivePhase } from "@/lib/scoring/phases";
 import {
   calculateCoilScore,
   calculatePriceChangePct,
+  getResistanceLevel,
+  getSwingStop,
   isNearResistance,
   toPriceBars,
 } from "@/lib/scoring/technical";
@@ -36,15 +38,26 @@ function computeIvRank(rows: UwIvRankRow[]): number | null {
   if (rows.length === 0) return null;
   const latest = rows[rows.length - 1];
   const rank = parseFloat(latest.iv_rank_1y);
-  return Number.isNaN(rank) ? null : rank * 100;
+  if (Number.isNaN(rank)) return null;
+  // UW may return 0–1 or 0–100 depending on endpoint version
+  return rank <= 1 ? rank * 100 : rank;
 }
 
 function hasAggressiveFlow(alerts: UwFlowAlert[]): boolean {
   return alerts.some((a) => {
     const premium = parseNum(a.total_premium);
     const isCall = a.type?.toLowerCase() === "call";
-    return premium >= 100_000 && (a.has_sweep || isCall);
+    return premium >= 100_000 && a.has_sweep && isCall;
   });
+}
+
+function darkPoolBaselineForPrice(stockPrice: number): number {
+  if (stockPrice <= 0) return 5_000_000;
+  // Scale baseline by price tier — avoids small caps always triggering
+  if (stockPrice < 20) return 500_000;
+  if (stockPrice < 50) return 1_500_000;
+  if (stockPrice < 150) return 3_000_000;
+  return 8_000_000;
 }
 
 function hasBullishNetFlow(vol: UwOptionsVolume): boolean {
@@ -225,14 +238,18 @@ export async function discoverCandidates(
       continue;
     }
     const price = parseNum(alert.underlying_price);
+    const ask = parseNum(alert.total_ask_side_prem);
+    const bid = parseNum(alert.total_bid_side_prem);
+    const bullish = ask > bid ? ask : parseNum(alert.total_premium) * 0.6;
+    const bearish = bid > 0 ? bid : parseNum(alert.total_premium) * 0.4;
     merged.set(ticker, {
       ticker,
       stockPrice: price,
       entry: {
-        bullishPremium: parseNum(alert.total_ask_side_prem),
-        bearishPremium: parseNum(alert.total_bid_side_prem),
+        bullishPremium: bullish,
+        bearishPremium: bearish,
         premium: parseNum(alert.total_premium),
-        premiumRatio: 0.5,
+        premiumRatio: bullish > 0 ? bearish / bullish : 1,
         tradeCount: 0,
         volume: 0,
       },
@@ -254,7 +271,6 @@ export async function discoverCandidates(
 export async function analyzeTicker(
   client: UnusualWhalesClient,
   candidate: CandidateMeta,
-  darkPoolBaseline = 5_000_000,
 ): Promise<TickerAnalysis> {
   const { ticker, entry } = candidate;
 
@@ -294,12 +310,20 @@ export async function analyzeTicker(
   const coilScore = calculateCoilScore(bars);
   const priceChangePct = calculatePriceChangePct(bars);
   const nearResistance = isNearResistance(bars);
+  const resistanceLevel = getResistanceLevel(bars);
+  const stopLevel = getSwingStop(bars);
   const darkPoolNotional = sumDarkPool(darkRes.data ?? []);
   const stockPrice =
     candidate.stockPrice ?? (bars.length > 0 ? bars[bars.length - 1].closePrice : 0);
+  const darkPoolBaseline = darkPoolBaselineForPrice(stockPrice);
   const gex = gexRes.data ? computeGexLevelsFromUw(gexRes.data, stockPrice) : null;
   const ivRank = computeIvRank(ivRes.data ?? []);
   const aggressiveFlow = hasAggressiveFlow(flowAlerts);
+  const inFlowAlerts =
+    candidate.inFlowAlerts ||
+    flowAlerts.some((a) => parseNum(a.total_premium) >= 100_000);
+  const inCoilScreener =
+    candidate.inCoilScreener || (coilScore >= 65 && Math.abs(priceChangePct) < 3);
 
   const signals = buildSignals({
     coilScore,
@@ -313,12 +337,12 @@ export async function analyzeTicker(
     gexFlipDistance: gex?.flipDistancePct ?? null,
     aggressiveFlow,
     bullishNetFlow,
-    inFlowAlerts: candidate.inFlowAlerts,
+    inFlowAlerts,
   });
 
   const score = signals.filter((s) => s.triggered).reduce((sum, s) => sum + s.points, 0);
   const maxScore = signals.reduce((sum, s) => sum + s.points, 0);
-  const { phase, phaseLabel, action, tier } = derivePhase(signals);
+  const { phase, phaseLabel, action, holdTime, tier } = derivePhase(signals);
 
   return {
     ticker,
@@ -328,6 +352,9 @@ export async function analyzeTicker(
     phase,
     phaseLabel,
     action,
+    holdTime,
+    resistanceLevel,
+    stopLevel,
     signals,
     gex,
     premium: entry.premium,
@@ -341,8 +368,8 @@ export async function analyzeTicker(
     sector: candidate.sector ?? info.sector,
     companyName: info.full_name,
     stockPrice,
-    inFlowAlerts: candidate.inFlowAlerts,
-    inCoilScreener: candidate.inCoilScreener,
+    inFlowAlerts,
+    inCoilScreener,
   };
 }
 

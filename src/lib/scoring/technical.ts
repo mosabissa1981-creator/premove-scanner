@@ -60,6 +60,16 @@ export function calculatePriceChangePct(bars: PriceBar[]): number {
   return ((last - first) / first) * 100;
 }
 
+export function getResistanceLevel(bars: PriceBar[]): number | null {
+  if (bars.length < 10) return null;
+  return Math.max(...bars.slice(-10).map((b) => b.highPrice));
+}
+
+export function getSwingStop(bars: PriceBar[]): number | null {
+  if (bars.length < 10) return null;
+  return Math.min(...bars.slice(-10).map((b) => b.lowPrice));
+}
+
 export function isNearResistance(bars: PriceBar[]): boolean {
   // Compare the current close against the highest high of the PRIOR bars.
   // Including the current bar's own high made any day that printed near its
