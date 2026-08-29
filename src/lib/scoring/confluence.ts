@@ -24,10 +24,18 @@ import {
   isNearResistance,
   toPriceBars,
 } from "@/lib/scoring/technical";
+import { clamp01, gradedFactor, ramp } from "@/lib/scoring/util";
+import { daysUntilEarnings, isEarningsSoon } from "@/lib/scoring/earnings";
 
 function parseNum(value: string | number | undefined): number {
   if (value === undefined) return 0;
   return typeof value === "number" ? value : parseFloat(value) || 0;
+}
+
+function optionalNum(value: string | number | undefined | null): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const n = typeof value === "number" ? value : parseFloat(value);
+  return Number.isNaN(n) ? null : n;
 }
 
 function sumDarkPool(trades: UwDarkpoolTrade[]): number {
@@ -41,6 +49,13 @@ function computeIvRank(rows: UwIvRankRow[]): number | null {
   if (Number.isNaN(rank)) return null;
   // UW may return 0–1 or 0–100 depending on endpoint version
   return rank <= 1 ? rank * 100 : rank;
+}
+
+function relativeVolume(row: UwStockScreenerRow): number | null {
+  const vol = optionalNum(row.volume);
+  const avg = optionalNum(row.avg_30_day_volume);
+  if (vol === null || avg === null || avg <= 0) return null;
+  return vol / avg;
 }
 
 function hasAggressiveFlow(alerts: UwFlowAlert[]): boolean {
@@ -66,7 +81,7 @@ function hasBullishNetFlow(vol: UwOptionsVolume): boolean {
   return netCall > netPut && netCall > 0;
 }
 
-function buildSignals(input: {
+export function buildSignals(input: {
   coilScore: number;
   darkPoolNotional: number;
   darkPoolBaseline: number;
@@ -75,19 +90,60 @@ function buildSignals(input: {
   ivRank: number | null;
   priceChangePct: number;
   nearResistance: boolean;
+  resistanceDistancePct: number | null;
   gexFlipDistance: number | null;
   aggressiveFlow: boolean;
   bullishNetFlow: boolean;
   inFlowAlerts: boolean;
+  earningsSoon: boolean;
 }): SignalDetail[] {
-  const darkPoolElevated = input.darkPoolNotional > input.darkPoolBaseline * 1.5;
   const priceIsFlat = Math.abs(input.priceChangePct) < 3;
   const coilTight = input.coilScore >= 65;
+  const darkPoolRatio =
+    input.darkPoolBaseline > 0 ? input.darkPoolNotional / input.darkPoolBaseline : 0;
+  const darkPoolElevated = darkPoolRatio > 1.5;
   const bullishFlow = input.premiumRatio < 0.85 && input.premium >= 250_000;
-  const ivRisingFlat =
-    input.ivRank !== null && input.ivRank >= 55 && priceIsFlat;
+  const ivRisingFlat = input.ivRank !== null && input.ivRank >= 55 && priceIsFlat;
   const approachingFlip =
     input.gexFlipDistance !== null && Math.abs(input.gexFlipDistance) <= 2;
+
+  const coilTriggered = coilTight && priceIsFlat;
+  const coilStrength = coilTriggered ? gradedFactor(ramp(input.coilScore, 65, 90)) : 0;
+
+  const darkTriggered = darkPoolElevated && priceIsFlat;
+  const darkStrength = darkTriggered ? gradedFactor(ramp(darkPoolRatio, 1.5, 5)) : 0;
+
+  const flowTriggered = input.aggressiveFlow || input.inFlowAlerts || bullishFlow;
+  const flowStrength = flowTriggered
+    ? input.aggressiveFlow
+      ? 1
+      : input.inFlowAlerts
+        ? 0.8
+        : 0.6
+    : 0;
+
+  const ivTriggered = ivRisingFlat;
+  // Dampen the IV signal when earnings are imminent — the IV pop is usually
+  // the event being priced, not organic accumulation.
+  const ivStrengthBase =
+    ivTriggered && input.ivRank !== null ? gradedFactor(ramp(input.ivRank, 55, 90)) : 0;
+  const ivStrength = input.earningsSoon ? ivStrengthBase * 0.25 : ivStrengthBase;
+
+  const techTriggered = input.nearResistance;
+  const techStrength = techTriggered
+    ? input.resistanceDistancePct !== null
+      ? 0.5 + 0.5 * clamp01(1 - Math.abs(input.resistanceDistancePct) / 2)
+      : 1
+    : 0;
+
+  const gexTriggered = approachingFlip;
+  const gexStrength =
+    gexTriggered && input.gexFlipDistance !== null
+      ? 0.5 + 0.5 * clamp01(1 - Math.abs(input.gexFlipDistance) / 2)
+      : 0;
+
+  const netTriggered = input.bullishNetFlow;
+  const netStrength = netTriggered ? 1 : 0;
 
   return [
     {
@@ -95,7 +151,8 @@ function buildSignals(input: {
       label: "Price Coiling",
       phase: "accumulation",
       points: 2,
-      triggered: coilTight && priceIsFlat,
+      triggered: coilTriggered,
+      strength: coilStrength,
       description: `Coil ${input.coilScore}/100, price ${input.priceChangePct.toFixed(1)}% — spring winding`,
     },
     {
@@ -103,9 +160,10 @@ function buildSignals(input: {
       label: "Dark Pool Buildup",
       phase: "accumulation",
       points: 2,
-      triggered: darkPoolElevated && priceIsFlat,
-      description: darkPoolElevated
-        ? `$${(input.darkPoolNotional / 1e6).toFixed(1)}M off-exchange while price flat`
+      triggered: darkTriggered,
+      strength: darkStrength,
+      description: darkTriggered
+        ? `$${(input.darkPoolNotional / 1e6).toFixed(1)}M off-exchange while price flat (${darkPoolRatio.toFixed(1)}x baseline)`
         : `$${(input.darkPoolNotional / 1e6).toFixed(1)}M dark pool`,
     },
     {
@@ -113,11 +171,12 @@ function buildSignals(input: {
       label: "Call Sweeps / Flow",
       phase: "conviction",
       points: 2,
-      triggered: input.aggressiveFlow || input.inFlowAlerts || bullishFlow,
-      description: input.inFlowAlerts
-        ? "On today's unusual flow alerts"
-        : input.aggressiveFlow
-          ? "Sweep or large call flow detected"
+      triggered: flowTriggered,
+      strength: flowStrength,
+      description: input.aggressiveFlow
+        ? "Sweep or large call flow detected"
+        : input.inFlowAlerts
+          ? "On today's unusual flow alerts"
           : bullishFlow
             ? "Bullish premium bias"
             : "No urgent flow yet",
@@ -127,19 +186,23 @@ function buildSignals(input: {
       label: "IV Up, Price Flat",
       phase: "conviction",
       points: 1,
-      triggered: ivRisingFlat,
+      triggered: ivTriggered,
+      strength: ivStrength,
       description:
-        input.ivRank !== null
-          ? `IV rank ${input.ivRank.toFixed(0)}% — market pricing a move`
-          : "IV data unavailable",
+        input.ivRank === null
+          ? "IV data unavailable"
+          : input.earningsSoon
+            ? `IV rank ${input.ivRank.toFixed(0)}% — but earnings soon, likely event IV`
+            : `IV rank ${input.ivRank.toFixed(0)}% — market pricing a move`,
     },
     {
       id: "technical",
       label: "At Breakout Level",
       phase: "ignition",
       points: 2,
-      triggered: input.nearResistance,
-      description: input.nearResistance
+      triggered: techTriggered,
+      strength: techStrength,
+      description: techTriggered
         ? "Within 2% of 10-day high — breakout zone"
         : "Not at resistance yet",
     },
@@ -148,7 +211,8 @@ function buildSignals(input: {
       label: "Near Gamma Flip",
       phase: "amplify",
       points: 1,
-      triggered: approachingFlip,
+      triggered: gexTriggered,
+      strength: gexStrength,
       description:
         input.gexFlipDistance !== null
           ? `${input.gexFlipDistance.toFixed(1)}% from flip — move will accelerate`
@@ -159,12 +223,29 @@ function buildSignals(input: {
       label: "Net Call Premium",
       phase: "conviction",
       points: 1,
-      triggered: input.bullishNetFlow,
-      description: input.bullishNetFlow
-        ? "Calls dominating puts today"
-        : "No net call bias",
+      triggered: netTriggered,
+      strength: netStrength,
+      description: netTriggered ? "Calls dominating puts today" : "No net call bias",
     },
   ];
+}
+
+/** Graded score (0..maxScore) and its percentage, using per-signal strength. */
+export function scoreSignals(signals: SignalDetail[]): {
+  score: number;
+  maxScore: number;
+  scorePct: number;
+} {
+  const maxScore = signals.reduce((sum, s) => sum + s.points, 0);
+  const raw = signals.reduce(
+    (sum, s) => sum + (s.triggered ? s.points * clamp01(s.strength) : 0),
+    0,
+  );
+  return {
+    score: Math.round(raw * 10) / 10,
+    maxScore,
+    scorePct: maxScore > 0 ? Math.round((raw / maxScore) * 100) : 0,
+  };
 }
 
 function toVolumeEntry(row: UwStockScreenerRow | UwOptionsVolume): OptionsVolumeEntry {
@@ -186,17 +267,59 @@ function toVolumeEntry(row: UwStockScreenerRow | UwOptionsVolume): OptionsVolume
   };
 }
 
+function screenerToCandidate(row: UwStockScreenerRow, source: string): CandidateMeta {
+  return {
+    ticker: row.ticker,
+    sector: row.sector,
+    stockPrice: parseNum(row.close),
+    entry: toVolumeEntry(row),
+    inCoilScreener: true,
+    inFlowAlerts: false,
+    sources: [source],
+    nextEarnings: row.next_earnings_date ?? null,
+    oiChangePerc: optionalNum(row.total_oi_change_perc),
+    relativeVolume: relativeVolume(row),
+    week52High: optionalNum(row.week_52_high),
+  };
+}
+
+/** Discovery rank — how promising a candidate is before deep analysis. */
+export function discoveryRank(c: CandidateMeta): number {
+  let r = 0;
+  r += (c.sources?.length ?? 1) * 3;
+  if (c.inFlowAlerts) r += 3;
+  if (c.inCoilScreener) r += 2;
+  r += clamp01((c.oiChangePerc ?? 0) / 20) * 3;
+  r += clamp01((c.relativeVolume ?? 0) / 3) * 2;
+  return r;
+}
+
 export async function discoverCandidates(
   client: UnusualWhalesClient,
   limit: number,
+  opts: { date?: string } = {},
 ): Promise<CandidateMeta[]> {
-  const [coilRes, flowRes] = await Promise.all([
+  const { date } = opts;
+
+  const [flatCallRes, oiChangeRes, flowRes] = await Promise.all([
+    // Bucket A: flat price + strong net call premium (hidden bullish flow).
     client.stockScreener({
       min_change: "-2",
       max_change: "2",
       min_net_call_premium: "250000",
       order: "net_call_premium",
       order_direction: "desc",
+      date,
+    }) as Promise<UwDataResponse<UwStockScreenerRow[]>>,
+    // Bucket B: flat price + rising open interest (quiet positioning that raw
+    // premium screens miss — closer to the "before the move" thesis).
+    client.stockScreener({
+      min_change: "-3",
+      max_change: "3",
+      min_total_oi_change_perc: "5",
+      order: "total_oi_change_perc",
+      order_direction: "desc",
+      date,
     }) as Promise<UwDataResponse<UwStockScreenerRow[]>>,
     client.flowAlerts({
       unusual: true,
@@ -206,44 +329,46 @@ export async function discoverCandidates(
     }) as Promise<UwDataResponse<UwFlowAlert[]>>,
   ]);
 
-  const coilTickers = new Map<string, UwStockScreenerRow>();
-  for (const row of coilRes.data ?? []) {
-    coilTickers.set(row.ticker, row);
-  }
-
-  const flowTickers = new Map<string, UwFlowAlert>();
-  for (const alert of flowRes.data ?? []) {
-    if (!flowTickers.has(alert.ticker)) {
-      flowTickers.set(alert.ticker, alert);
-    }
-  }
-
   const merged = new Map<string, CandidateMeta>();
 
-  for (const [ticker, row] of coilTickers) {
-    merged.set(ticker, {
-      ticker,
-      sector: row.sector,
-      stockPrice: parseNum(row.close),
-      entry: toVolumeEntry(row),
-      inCoilScreener: true,
-      inFlowAlerts: flowTickers.has(ticker),
-    });
+  function mergeScreenerRow(row: UwStockScreenerRow, source: string) {
+    const existing = merged.get(row.ticker);
+    if (existing) {
+      existing.sources = existing.sources ?? [];
+      if (!existing.sources.includes(source)) existing.sources.push(source);
+      existing.inCoilScreener = true;
+      existing.nextEarnings = existing.nextEarnings ?? (row.next_earnings_date ?? null);
+      existing.oiChangePerc = existing.oiChangePerc ?? optionalNum(row.total_oi_change_perc);
+      existing.relativeVolume = existing.relativeVolume ?? relativeVolume(row);
+      existing.week52High = existing.week52High ?? optionalNum(row.week_52_high);
+      return;
+    }
+    merged.set(row.ticker, screenerToCandidate(row, source));
   }
 
-  for (const [ticker, alert] of flowTickers) {
-    const existing = merged.get(ticker);
+  for (const row of flatCallRes.data ?? []) mergeScreenerRow(row, "flat-call");
+  for (const row of oiChangeRes.data ?? []) mergeScreenerRow(row, "oi-change");
+
+  const flowTickers = new Set<string>();
+  for (const alert of flowRes.data ?? []) {
+    if (flowTickers.has(alert.ticker)) continue;
+    flowTickers.add(alert.ticker);
+
+    const existing = merged.get(alert.ticker);
     if (existing) {
       existing.inFlowAlerts = true;
+      existing.sources = existing.sources ?? [];
+      if (!existing.sources.includes("flow")) existing.sources.push("flow");
       continue;
     }
+
     const price = parseNum(alert.underlying_price);
     const ask = parseNum(alert.total_ask_side_prem);
     const bid = parseNum(alert.total_bid_side_prem);
     const bullish = ask > bid ? ask : parseNum(alert.total_premium) * 0.6;
     const bearish = bid > 0 ? bid : parseNum(alert.total_premium) * 0.4;
-    merged.set(ticker, {
-      ticker,
+    merged.set(alert.ticker, {
+      ticker: alert.ticker,
       stockPrice: price,
       entry: {
         bullishPremium: bullish,
@@ -255,14 +380,18 @@ export async function discoverCandidates(
       },
       inCoilScreener: false,
       inFlowAlerts: true,
+      sources: ["flow"],
+      nextEarnings: null,
+      oiChangePerc: null,
+      relativeVolume: null,
+      week52High: null,
     });
   }
 
   return [...merged.values()]
     .sort((a, b) => {
-      const aBoost = (a.inCoilScreener ? 2 : 0) + (a.inFlowAlerts ? 3 : 0);
-      const bBoost = (b.inCoilScreener ? 2 : 0) + (b.inFlowAlerts ? 3 : 0);
-      if (bBoost !== aBoost) return bBoost - aBoost;
+      const rank = discoveryRank(b) - discoveryRank(a);
+      if (rank !== 0) return rank;
       return b.entry.premium - a.entry.premium;
     })
     .slice(0, limit);
@@ -325,6 +454,14 @@ export async function analyzeTicker(
   const inCoilScreener =
     candidate.inCoilScreener || (coilScore >= 65 && Math.abs(priceChangePct) < 3);
 
+  const earningsInDays = daysUntilEarnings(candidate.nextEarnings ?? null);
+  const earningsSoon = isEarningsSoon(earningsInDays);
+
+  const resistanceDistancePct =
+    resistanceLevel && resistanceLevel > 0 && stockPrice > 0
+      ? ((resistanceLevel - stockPrice) / resistanceLevel) * 100
+      : null;
+
   const signals = buildSignals({
     coilScore,
     darkPoolNotional,
@@ -334,20 +471,22 @@ export async function analyzeTicker(
     ivRank,
     priceChangePct,
     nearResistance,
+    resistanceDistancePct,
     gexFlipDistance: gex?.flipDistancePct ?? null,
     aggressiveFlow,
     bullishNetFlow,
     inFlowAlerts,
+    earningsSoon,
   });
 
-  const score = signals.filter((s) => s.triggered).reduce((sum, s) => sum + s.points, 0);
-  const maxScore = signals.reduce((sum, s) => sum + s.points, 0);
+  const { score, maxScore, scorePct } = scoreSignals(signals);
   const { phase, phaseLabel, action, holdTime, tier } = derivePhase(signals);
 
   return {
     ticker,
     score,
     maxScore,
+    scorePct,
     tier,
     phase,
     phaseLabel,
@@ -355,6 +494,10 @@ export async function analyzeTicker(
     holdTime,
     resistanceLevel,
     stopLevel,
+    earningsInDays,
+    earningsSoon,
+    oiChangePerc: candidate.oiChangePerc ?? null,
+    relativeVolume: candidate.relativeVolume ?? null,
     signals,
     gex,
     premium: entry.premium,
@@ -382,7 +525,7 @@ export async function runConfluenceScan(
   errors: string[];
   strategy: string;
 }> {
-  const limit = options.limit ?? 12;
+  const limit = options.limit ?? 25;
   const candidates = await discoverCandidates(client, limit);
 
   const results: TickerAnalysis[] = [];
@@ -428,6 +571,6 @@ export async function runConfluenceScan(
     results,
     candidatesScreened: candidates.length,
     errors,
-    strategy: "coil-first",
+    strategy: "multi-bucket-graded",
   };
 }
