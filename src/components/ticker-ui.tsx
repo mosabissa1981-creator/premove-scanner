@@ -31,18 +31,17 @@ export function TierBadge({ tier, label }: { tier: TickerAnalysis["tier"]; label
 
 export function ScoreRing({ score, maxScore }: { score: number; maxScore: number }) {
   const pct = maxScore > 0 ? (score / maxScore) * 100 : 0;
-  const color =
-    score >= 7 ? "text-emerald-400" : score >= 4 ? "text-sky-400" : "text-amber-400";
+  const text =
+    pct >= 65 ? "text-emerald-400" : pct >= 40 ? "text-sky-400" : "text-amber-400";
+  const bar = pct >= 65 ? "bg-emerald-500" : pct >= 40 ? "bg-sky-500" : "bg-amber-500";
+  const display = Number.isInteger(score) ? score : score.toFixed(1);
 
   return (
     <div className="flex flex-col items-center">
-      <div className={`text-3xl font-bold tabular-nums ${color}`}>{score}</div>
+      <div className={`text-3xl font-bold tabular-nums ${text}`}>{display}</div>
       <div className="text-xs text-zinc-500">/ {maxScore}</div>
       <div className="mt-2 h-1.5 w-16 overflow-hidden rounded-full bg-zinc-800">
-        <div
-          className={`h-full rounded-full ${score >= 7 ? "bg-emerald-500" : score >= 4 ? "bg-sky-500" : "bg-amber-500"}`}
-          style={{ width: `${pct}%` }}
-        />
+        <div className={`h-full rounded-full ${bar}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -149,6 +148,11 @@ export function TickerCard({
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
+        {analysis.earningsSoon && (
+          <span className="rounded bg-orange-500/15 px-2 py-0.5 text-[10px] font-medium text-orange-300">
+            ⚠︎ Earnings{analysis.earningsInDays != null ? ` ${analysis.earningsInDays}d` : ""}
+          </span>
+        )}
         {analysis.inCoilScreener && (
           <span className="rounded bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-400">
             Flat + calls
