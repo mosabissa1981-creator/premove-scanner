@@ -82,6 +82,40 @@ export interface UwGexLevels {
   gamma_magnet: string | null;
 }
 
+export interface UwGreekExposureExpiryRow {
+  call_gex: string;
+  put_gex: string;
+  expiry: string;
+  dte: number;
+  date?: string;
+}
+
+export type GexExpiryMode = "daily" | "weekly" | "monthly" | "all";
+
+export interface GexScanRow {
+  ticker: string;
+  source: "unusual-whales";
+  expiry: string;
+  callGex: number;
+  putGex: number;
+  netGex: number;
+  dominant: "CALL" | "PUT";
+  callWall: number | null;
+  putWall: number | null;
+  ratio: string;
+  imbalance: number;
+  error?: string;
+}
+
+export interface GexScanResult {
+  scannedAt: string;
+  expiration: string;
+  expiryMode: GexExpiryMode;
+  tickersRequested: number;
+  results: GexScanRow[];
+  errors: string[];
+}
+
 export interface UwOptionsVolume {
   date: string;
   bullish_premium: string;

@@ -6,6 +6,7 @@ import { useApiKey } from "@/lib/api-key-context";
 
 const links = [
   { href: "/", label: "Scanner", shortLabel: "Scan" },
+  { href: "/gex-scan", label: "GEX Scan", shortLabel: "GEX" },
   { href: "/watchlist", label: "Watchlist", shortLabel: "List" },
   { href: "/backtest", label: "Backtest", shortLabel: "Test" },
   { href: "/settings", label: "Settings", shortLabel: "Set" },
