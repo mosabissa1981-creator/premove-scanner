@@ -7,6 +7,7 @@ import { useApiKey } from "@/lib/api-key-context";
 const links = [
   { href: "/", label: "Scanner" },
   { href: "/watchlist", label: "Watchlist" },
+  { href: "/backtest", label: "Backtest" },
   { href: "/settings", label: "Settings" },
 ];
 
