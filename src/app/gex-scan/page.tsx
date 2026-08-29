@@ -232,60 +232,36 @@ export default function GexScanPage() {
             </p>
           ) : (
             <>
-              <div className="space-y-2 md:hidden">
-                {visible.map((row) => {
-                  const { callHeavy } = gexSides(row);
-                  const tier = tierClass(row);
-                  return (
-                    <div
-                      key={row.ticker}
-                      className={`rounded-xl border border-zinc-800 p-3 ${rowBackground(tier)}`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-lg font-bold tracking-wide">{row.ticker}</span>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`text-base font-bold ${callHeavy ? "text-emerald-400" : "text-red-400"}`}
-                          >
-                            {row.ratio}
-                          </span>
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                              row.dominant === "CALL"
-                                ? "bg-emerald-500/15 text-emerald-300"
-                                : "bg-red-500/15 text-red-300"
-                            }`}
-                          >
-                            {row.dominant}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                        <div>
-                          <div className="text-zinc-500">Call</div>
-                          <div className={`font-semibold ${cls(row.callGex)}`}>
+              <div className="overflow-hidden rounded-xl border border-zinc-800 md:hidden">
+                <table className="w-full border-collapse text-xs tabular-nums sm:text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-800 text-left text-[10px] uppercase tracking-wide text-zinc-500">
+                      <th className="px-2 py-2.5">Symbol</th>
+                      <th className="px-2 py-2.5 text-right">Call GEX</th>
+                      <th className="px-2 py-2.5 text-right">Put GEX</th>
+                      <th className="px-2 py-2.5 text-right">Net GEX</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((row) => {
+                      const tier = tierClass(row);
+                      return (
+                        <tr key={row.ticker} className={`border-b border-zinc-800/80 ${rowBackground(tier)}`}>
+                          <td className="px-2 py-2.5 font-bold">{row.ticker}</td>
+                          <td className={`px-2 py-2.5 text-right ${cls(row.callGex)}`}>
                             {formatMoney(row.callGex)}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-zinc-500">Put</div>
-                          <div className={`font-semibold ${cls(row.putGex)}`}>
+                          </td>
+                          <td className={`px-2 py-2.5 text-right ${cls(row.putGex)}`}>
                             {formatMoney(row.putGex)}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-zinc-500">Net</div>
-                          <div className={`font-semibold ${cls(row.netGex)}`}>
+                          </td>
+                          <td className={`px-2 py-2.5 text-right font-semibold ${cls(row.netGex)}`}>
                             {formatMoney(row.netGex)}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-2 text-xs text-zinc-400">
-                        Walls {row.callWall ?? "—"} / {row.putWall ?? "—"}
-                      </div>
-                    </div>
-                  );
-                })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
               <div className="hidden overflow-x-auto rounded-xl border border-zinc-800 md:block">
