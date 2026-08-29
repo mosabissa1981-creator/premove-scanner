@@ -32,8 +32,8 @@ export function WatchlistButton({ ticker }: { ticker: string }) {
 
 export function TickerDetailView({ analysis }: { analysis: TickerAnalysis }) {
   return (
-    <div className="min-w-0 space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+    <div className="w-full min-w-0 space-y-6 overflow-x-clip">
+      <div className="grid w-full min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold sm:text-3xl">{analysis.ticker}</h1>
@@ -43,10 +43,10 @@ export function TickerDetailView({ analysis }: { analysis: TickerAnalysis }) {
             <p className="mt-1 truncate text-zinc-400">{analysis.companyName}</p>
           )}
           {analysis.stockPrice != null && analysis.stockPrice > 0 && (
-            <p className="mt-1 text-xl font-semibold tabular-nums sm:text-2xl">
-              ${analysis.stockPrice.toFixed(2)}
+            <p className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xl font-semibold tabular-nums sm:text-2xl">
+              <span>${analysis.stockPrice.toFixed(2)}</span>
               <span
-                className={`ml-2 text-sm ${analysis.priceChangePct >= 0 ? "text-emerald-400" : "text-red-400"}`}
+                className={`text-sm ${analysis.priceChangePct >= 0 ? "text-emerald-400" : "text-red-400"}`}
               >
                 {analysis.priceChangePct >= 0 ? "+" : ""}
                 {analysis.priceChangePct.toFixed(1)}% (30d)
@@ -54,7 +54,9 @@ export function TickerDetailView({ analysis }: { analysis: TickerAnalysis }) {
             </p>
           )}
         </div>
-        <ScoreRing score={analysis.score} maxScore={analysis.maxScore} />
+        <div className="justify-self-start lg:justify-self-end">
+          <ScoreRing score={analysis.score} maxScore={analysis.maxScore} />
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -82,9 +84,9 @@ export function TickerDetailView({ analysis }: { analysis: TickerAnalysis }) {
       )}
 
       {(analysis.resistanceLevel || analysis.stopLevel) && (
-        <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 sm:p-5">
+        <section className="w-full min-w-0 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 sm:p-5">
           <h2 className="text-sm font-semibold text-zinc-300">Swing levels</h2>
-          <div className="mt-3 grid grid-cols-1 gap-3">
+          <div className="mt-3 grid w-full min-w-0 grid-cols-1 gap-3">
             {analysis.resistanceLevel && (
               <LevelCard
                 label="Entry trigger (resistance)"
@@ -103,7 +105,7 @@ export function TickerDetailView({ analysis }: { analysis: TickerAnalysis }) {
         </section>
       )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
+      <div className="grid w-full min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
         <Metric label="Options Premium" value={`$${(analysis.premium / 1e6).toFixed(2)}M`} />
         <Metric label="Coil Score" value={`${analysis.coilScore}/100`} />
         <Metric
@@ -160,9 +162,9 @@ export function TickerDetailView({ analysis }: { analysis: TickerAnalysis }) {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
+    <div className="min-w-0 w-full rounded-xl border border-zinc-800 bg-zinc-900/60 p-4">
       <div className="text-xs text-zinc-500">{label}</div>
-      <div className="mt-1 text-lg font-semibold tabular-nums">{value}</div>
+      <div className="mt-1 break-all text-lg font-semibold tabular-nums">{value}</div>
     </div>
   );
 }

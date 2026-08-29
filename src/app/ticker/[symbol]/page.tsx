@@ -78,8 +78,8 @@ export default function TickerPage({ params }: { params: Promise<{ symbol: strin
   }
 
   return (
-    <div className="min-w-0 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="w-full min-w-0 space-y-6 overflow-x-clip">
+      <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-3">
         <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-300">
           ← Back to Scanner
         </Link>
