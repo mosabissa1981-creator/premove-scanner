@@ -4,68 +4,78 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
-import {
-  getWatchlist,
-  removeFromWatchlist,
-} from "@/components/ticker-detail";
+import { removeFromWatchlist, useWatchlist } from "@/lib/watchlist";
 import { TickerCard } from "@/components/ticker-ui";
 import type { TickerAnalysis } from "@/lib/unusualwhales/types";
+
+async function fetchWatchlistScores(
+  apiKey: string,
+  tickers: string[],
+): Promise<{ results: TickerAnalysis[]; errors: string[] }> {
+  const res = await fetch("/api/watchlist", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      ...apiHeaders(apiKey),
+    },
+    body: JSON.stringify({ tickers }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "Refresh failed");
+  return { results: data.results ?? [], errors: data.errors ?? [] };
+}
 
 export default function WatchlistPage() {
   const { apiKey, hasKey } = useApiKey();
   const router = useRouter();
-  const [tickers, setTickers] = useState<string[]>([]);
+  const tickers = useWatchlist();
   const [results, setResults] = useState<TickerAnalysis[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshList = useCallback(() => {
-    setTickers(getWatchlist());
-  }, []);
-
-  const refreshScores = useCallback(async () => {
-    const list = getWatchlist();
-    setTickers(list);
-    if (!hasKey || list.length === 0) return;
-
+  const runRefresh = useCallback(async () => {
+    if (!hasKey || tickers.length === 0) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/watchlist", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json",
-          ...apiHeaders(apiKey),
-        },
-        body: JSON.stringify({ tickers: list }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Refresh failed");
-      setResults(data.results ?? []);
-      if (data.errors?.length) {
-        setError(`Some tickers failed: ${data.errors.join(", ")}`);
-      }
+      const { results: scored, errors } = await fetchWatchlistScores(apiKey, tickers);
+      setResults(scored);
+      setError(errors.length ? `Some tickers failed: ${errors.join(", ")}` : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Refresh failed");
     } finally {
       setLoading(false);
     }
-  }, [apiKey, hasKey]);
+  }, [apiKey, hasKey, tickers]);
 
   useEffect(() => {
-    refreshList();
-  }, [refreshList]);
+    if (tickers.length === 0 || !hasKey) return;
+    let cancelled = false;
 
-  useEffect(() => {
-    if (tickers.length > 0 && hasKey) {
-      void refreshScores();
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const { results: scored, errors } = await fetchWatchlistScores(apiKey, tickers);
+        if (cancelled) return;
+        setResults(scored);
+        setError(errors.length ? `Some tickers failed: ${errors.join(", ")}` : null);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Refresh failed");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-  }, [tickers.length, hasKey, refreshScores]);
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiKey, hasKey, tickers]);
 
   const handleRemove = (ticker: string) => {
     removeFromWatchlist(ticker);
-    setTickers(getWatchlist());
     setResults((prev) => prev.filter((r) => r.ticker !== ticker));
   };
 
@@ -97,7 +107,7 @@ export default function WatchlistPage() {
         </div>
         <button
           type="button"
-          onClick={refreshScores}
+          onClick={runRefresh}
           disabled={loading || !hasKey}
           className="shrink-0 rounded-lg border border-zinc-700 px-4 py-2 text-sm text-zinc-300 disabled:opacity-40"
         >
@@ -106,7 +116,10 @@ export default function WatchlistPage() {
       </div>
 
       {!hasKey && (
-        <Link href="/settings" className="block rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+        <Link
+          href="/settings"
+          className="block rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300"
+        >
           Add API key to refresh live scores →
         </Link>
       )}

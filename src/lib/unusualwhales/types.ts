@@ -10,7 +10,6 @@ export interface SignalDetail {
 }
 
 export interface GexLevels {
-  netGamma: number;
   gammaFlip: number | null;
   callWall: number | null;
   putWall: number | null;

@@ -19,25 +19,40 @@ export default function TickerPage({ params }: { params: Promise<{ symbol: strin
 
   useEffect(() => {
     if (!symbol) return;
-    if (!apiKey && !hasKey) {
-      setError("Add your Unusual Whales API key in Settings.");
-      setLoading(false);
-      return;
-    }
+    let cancelled = false;
 
-    setLoading(true);
-    fetch(`/api/ticker/${symbol}`, {
-      headers: apiHeaders(apiKey),
-      credentials: "same-origin",
-    })
-      .then(async (res) => {
+    async function load(currentSymbol: string) {
+      if (!apiKey && !hasKey) {
+        if (!cancelled) {
+          setError("Add your Unusual Whales API key in Settings.");
+          setLoading(false);
+        }
+        return;
+      }
+
+      if (!cancelled) setLoading(true);
+      try {
+        const res = await fetch(`/api/ticker/${currentSymbol}`, {
+          headers: apiHeaders(apiKey),
+          credentials: "same-origin",
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Failed to load");
-        setAnalysis(data);
-        setError(null);
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed"))
-      .finally(() => setLoading(false));
+        if (!cancelled) {
+          setAnalysis(data);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load(symbol);
+    return () => {
+      cancelled = true;
+    };
   }, [symbol, apiKey, hasKey]);
 
   if (loading) {

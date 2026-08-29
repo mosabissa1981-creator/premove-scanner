@@ -20,7 +20,6 @@ export function computeGexLevelsFromUw(
       : null;
 
   return {
-    netGamma: 0,
     gammaFlip,
     callWall,
     putWall,

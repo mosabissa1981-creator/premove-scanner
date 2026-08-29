@@ -71,11 +71,14 @@ export function getSwingStop(bars: PriceBar[]): number | null {
 }
 
 export function isNearResistance(bars: PriceBar[]): boolean {
-  if (bars.length < 10) return false;
-  const recent = bars.slice(-10);
-  const highs = recent.map((b) => b.highPrice);
+  // Compare the current close against the highest high of the PRIOR bars.
+  // Including the current bar's own high made any day that printed near its
+  // intraday high read as "at resistance"; excluding it means the signal
+  // reflects proximity to a real prior high (a breakout zone).
+  if (bars.length < 11) return false;
+  const prior = bars.slice(-11, -1);
+  const resistance = Math.max(...prior.map((b) => b.highPrice));
   const current = bars[bars.length - 1].closePrice;
-  const resistance = Math.max(...highs);
   if (resistance === 0) return false;
   const distance = (resistance - current) / resistance;
   return distance >= 0 && distance <= 0.02;

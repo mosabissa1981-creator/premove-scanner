@@ -388,17 +388,33 @@ export async function runConfluenceScan(
   const results: TickerAnalysis[] = [];
   const errors: string[] = [];
 
-  for (const candidate of candidates) {
-    try {
-      const analysis = await analyzeTicker(client, candidate);
-      if (analysis.tier !== "watch" || analysis.score >= 3) {
-        results.push(analysis);
+  // Analyze candidates with bounded concurrency instead of one-at-a-time with a
+  // fixed delay. Each ticker fans out several UW calls, so a small pool keeps
+  // scan latency low while the client's cache + retry/backoff absorb bursts and
+  // stay within rate limits.
+  const CONCURRENCY = 4;
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < candidates.length) {
+      const candidate = candidates[cursor];
+      cursor += 1;
+      try {
+        const analysis = await analyzeTicker(client, candidate);
+        if (analysis.tier !== "watch" || analysis.score >= 3) {
+          results.push(analysis);
+        }
+      } catch (err) {
+        errors.push(
+          `${candidate.ticker}: ${err instanceof Error ? err.message : "Unknown error"}`,
+        );
       }
-      await new Promise((r) => setTimeout(r, 350));
-    } catch (err) {
-      errors.push(`${candidate.ticker}: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
   }
+
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, candidates.length) }, () => worker()),
+  );
 
   const tierOrder = { ready: 0, "setting-up": 1, early: 2, watch: 3 };
   results.sort(
