@@ -1,0 +1,6 @@
+name = "scorch-hot-sectors"
+compatibility_date = "2024-08-01"
+pages_build_output_dir = "dist"
+
+[vars]
+# Optional: set VAPID_PUBLIC_KEY in Cloudflare dashboard for push alerts
