@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
 import type { ScanResult, TickerAnalysis } from "@/lib/unusualwhales/types";
 import { TickerCard } from "@/components/ticker-ui";
+import { TickerSearch } from "@/components/ticker-search";
 
 export default function ScannerPage() {
   const { apiKey, hasKey } = useApiKey();
@@ -62,6 +63,13 @@ export default function ScannerPage() {
           Multi-day swing candidates — flat price + hidden flow before the move.
           Hold <strong className="text-zinc-300">3–15 days</strong>, not scalps.
         </p>
+      </section>
+
+      <section className="space-y-2">
+        <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+          Look up any stock
+        </label>
+        <TickerSearch />
       </section>
 
       <button
