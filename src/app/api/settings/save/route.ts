@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { normalizeApiKey, setApiKeyCookie } from "@/lib/api-key-cookie";
+import { isSecureOrigin, normalizeApiKey, setApiKeyCookie } from "@/lib/api-key-cookie";
 import { getRequestOrigin } from "@/lib/request-origin";
 
 function wantsJson(request: Request): boolean {
@@ -48,13 +48,15 @@ export async function POST(request: Request) {
     );
   }
 
+  const cookieOptions = { secure: isSecureOrigin(origin) };
+
   if (json) {
     const response = NextResponse.json({ ok: true, message: "API key saved" });
-    setApiKeyCookie(response, apiKey);
+    setApiKeyCookie(response, apiKey, cookieOptions);
     return response;
   }
 
   const response = NextResponse.redirect(new URL("/settings?saved=1", origin));
-  setApiKeyCookie(response, apiKey);
+  setApiKeyCookie(response, apiKey, cookieOptions);
   return response;
 }

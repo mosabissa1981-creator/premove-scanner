@@ -12,9 +12,11 @@ describe("cleanErrorMessage", () => {
     );
   });
 
-  it("extracts the message field from a JSON error and collapses whitespace", () => {
+  it("maps rate limit errors to a helpful unlimited-plan message", () => {
     const raw = JSON.stringify({ code: "rate_limited", message: "Too many\n\n requests" });
-    expect(cleanErrorMessage(raw)).toBe("Too many requests");
+    expect(cleanErrorMessage(raw)).toBe(
+      "Unusual Whales rate limit hit (per-minute cap). Wait a minute and retry — unlimited daily plans still have burst limits.",
+    );
   });
 
   it("returns a plain string message unchanged (trimmed)", () => {

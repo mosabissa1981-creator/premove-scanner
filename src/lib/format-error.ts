@@ -21,6 +21,10 @@ export function cleanErrorMessage(raw: string): string {
 
   text = text.replace(/\s+/g, " ").trim();
 
+  if (/rate.?limit|too many requests|429/i.test(text)) {
+    return "Unusual Whales rate limit hit (per-minute cap). Wait a minute and retry — unlimited daily plans still have burst limits.";
+  }
+
   if (/auth|token|unauthor|api[-\s]?key/i.test(text)) {
     return "Your Unusual Whales API key is missing or invalid. Add a valid key in Settings.";
   }

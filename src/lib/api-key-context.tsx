@@ -18,6 +18,7 @@ interface ApiKeyContextValue {
   hasServerCookie: boolean;
   isReady: boolean;
   setApiKey: (key: string) => Promise<{ ok: boolean; error?: string }>;
+  persistLocalKey: (key: string) => void;
   clearApiKey: () => Promise<void>;
   refreshStatus: () => Promise<void>;
 }
@@ -139,6 +140,10 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const persistLocalKey = useCallback((key: string) => {
+    saveToLocalStorage(normalizeKey(key));
+  }, []);
+
   const clearApiKey = useCallback(async () => {
     try {
       await fetch("/api/settings", { method: "DELETE", credentials: "same-origin" });
@@ -159,6 +164,7 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
         hasServerCookie,
         isReady,
         setApiKey,
+        persistLocalKey,
         clearApiKey,
         refreshStatus,
       }}
