@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
 import type { TickerAnalysis } from "@/lib/unusualwhales/types";
 import { TickerDetailView, WatchlistButton } from "@/components/ticker-detail";
+import { cleanErrorMessage } from "@/lib/format-error";
 
 export default function TickerPage({ params }: { params: Promise<{ symbol: string }> }) {
   const { apiKey, hasKey } = useApiKey();
@@ -43,7 +44,9 @@ export default function TickerPage({ params }: { params: Promise<{ symbol: strin
           setError(null);
         }
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed");
+        if (!cancelled) {
+          setError(cleanErrorMessage(err instanceof Error ? err.message : "Failed"));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
