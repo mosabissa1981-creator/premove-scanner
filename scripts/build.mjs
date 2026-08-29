@@ -4,9 +4,17 @@ function run(command) {
   execSync(command, { stdio: "inherit" });
 }
 
-if (process.env.WORKERS_CI === "1") {
-  run("npm --prefix scorch-hot ci");
+const isWorkersCi = Boolean(
+  process.env.WORKERS_CI ||
+    process.env.WORKERS_CI_BUILD_UUID ||
+    process.env.WORKERS_CI_BRANCH,
+);
+
+if (isWorkersCi) {
+  console.log("Cloudflare Workers Builds detected — building scorch-hot");
+  run("npm --prefix scorch-hot install --no-audit --no-fund");
   run("npm --prefix scorch-hot run build");
 } else {
+  console.log("Building PreMove (Next.js)");
   run("next build");
 }
