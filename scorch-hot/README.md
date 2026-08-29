@@ -27,11 +27,11 @@ Yahoo Finance Chart API v8 (`yahoo-finance-chart-v8`). No API key required.
 ```bash
 npm install
 
-# Terminal 1 — API (Pages Functions)
-npx wrangler pages dev dist --port 8788
+# Terminal 1 — API (Worker + static assets)
+npm run build && npx wrangler dev --port 8788
 
-# Terminal 2 — build once, then Vite dev server
-npm run build && npm run dev
+# Terminal 2 — Vite dev server (proxies /api to wrangler)
+npm run dev
 ```
 
 Or test the sectors builder directly:
@@ -44,7 +44,7 @@ npx tsx scripts/smoke-sectors.ts
 
 ```bash
 npm run build
-npx wrangler pages deploy dist --project-name scorch-hot-sectors
+npm run deploy
 ```
 
 ### Connect GitHub (recommended)

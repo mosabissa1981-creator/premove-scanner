@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "deploy": "npm run build && wrangler pages deploy dist --project-name scorch-hot-sectors"
+    "deploy": "wrangler deploy",
+    "pages:dev": "npm run build && wrangler pages dev dist --port 8788"
   },
   "dependencies": {
     "react": "^19.1.0",
