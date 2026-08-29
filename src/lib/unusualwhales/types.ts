@@ -6,6 +6,8 @@ export interface SignalDetail {
   phase: SetupPhase;
   points: number;
   triggered: boolean;
+  /** How strongly the signal fired, 0..1. Used for graded scoring. */
+  strength: number;
   description: string;
 }
 
@@ -28,8 +30,14 @@ export interface TickerAnalysis {
   phaseLabel: string;
   action: string;
   holdTime: string;
+  /** Graded score as a percentage of maxScore (0..100). */
+  scorePct: number;
   resistanceLevel?: number | null;
   stopLevel?: number | null;
+  earningsInDays?: number | null;
+  earningsSoon?: boolean;
+  oiChangePerc?: number | null;
+  relativeVolume?: number | null;
   signals: SignalDetail[];
   gex: GexLevels | null;
   premium: number;
@@ -96,6 +104,14 @@ export interface UwStockScreenerRow {
   put_premium: string;
   iv_rank?: string;
   net_call_premium?: string;
+  total_oi_change_perc?: string;
+  volume?: string | number;
+  avg_30_day_volume?: string | number;
+  next_earnings_date?: string;
+  implied_move?: string;
+  week_52_high?: string;
+  week_52_low?: string;
+  marketcap?: string;
 }
 
 export interface UwFlowAlert {
@@ -153,4 +169,18 @@ export interface CandidateMeta {
   entry: OptionsVolumeEntry;
   inCoilScreener: boolean;
   inFlowAlerts: boolean;
+  /** Discovery buckets that surfaced this ticker (e.g. "flat-call", "oi-change"). */
+  sources?: string[];
+  nextEarnings?: string | null;
+  oiChangePerc?: number | null;
+  relativeVolume?: number | null;
+  week52High?: number | null;
+}
+
+export interface UwMarketTideRow {
+  timestamp?: string;
+  date?: string;
+  net_call_premium?: string | number;
+  net_put_premium?: string | number;
+  net_volume?: string | number;
 }

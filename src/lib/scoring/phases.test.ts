@@ -3,7 +3,15 @@ import { derivePhase } from "@/lib/scoring/phases";
 import type { SetupPhase, SignalDetail } from "@/lib/unusualwhales/types";
 
 function signal(phase: SetupPhase, triggered: boolean): SignalDetail {
-  return { id: phase, label: phase, phase, points: 1, triggered, description: "" };
+  return {
+    id: phase,
+    label: phase,
+    phase,
+    points: 1,
+    triggered,
+    strength: triggered ? 1 : 0,
+    description: "",
+  };
 }
 
 describe("derivePhase", () => {

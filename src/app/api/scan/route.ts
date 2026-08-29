@@ -20,12 +20,12 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const limit = Number(searchParams.get("limit") ?? "12");
+  const limit = Number(searchParams.get("limit") ?? "25");
 
   try {
     const client = new UnusualWhalesClient(apiKey);
     const { results, candidatesScreened, errors, strategy } = await runConfluenceScan(client, {
-      limit: Math.min(limit, 20),
+      limit: Math.min(Math.max(limit, 1), 40),
     });
 
     return NextResponse.json({

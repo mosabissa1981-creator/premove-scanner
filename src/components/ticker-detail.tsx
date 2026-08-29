@@ -66,7 +66,20 @@ export function TickerDetailView({ analysis }: { analysis: TickerAnalysis }) {
             {analysis.sector}
           </span>
         )}
+        {analysis.earningsSoon && (
+          <span className="rounded-full bg-orange-500/15 px-3 py-1 text-xs font-medium text-orange-300">
+            ⚠︎ Earnings
+            {analysis.earningsInDays != null ? ` in ${analysis.earningsInDays}d` : " soon"}
+          </span>
+        )}
       </div>
+
+      {analysis.earningsSoon && (
+        <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-sm text-orange-200">
+          Earnings fall inside the swing window — the elevated IV is likely pricing the
+          event, not organic accumulation. Treat the IV signal with caution.
+        </div>
+      )}
 
       {(analysis.resistanceLevel || analysis.stopLevel) && (
         <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
