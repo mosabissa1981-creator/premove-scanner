@@ -130,6 +130,11 @@ export function TickerCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-lg font-bold text-zinc-100">{analysis.ticker}</span>
+            {analysis.stockPrice != null && analysis.stockPrice > 0 && (
+              <span className="text-sm font-semibold tabular-nums text-zinc-300">
+                ${analysis.stockPrice.toFixed(2)}
+              </span>
+            )}
             <TierBadge tier={analysis.tier} label={analysis.phaseLabel} />
           </div>
           {analysis.companyName && (
