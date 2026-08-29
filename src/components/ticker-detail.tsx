@@ -1,63 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import type { TickerAnalysis } from "@/lib/unusualwhales/types";
 import { ScoreRing, SignalList, TierBadge } from "@/components/ticker-ui";
-
-const WATCHLIST_KEY = "premove_watchlist";
-
-export function addToWatchlist(ticker: string) {
-  const stored = localStorage.getItem(WATCHLIST_KEY);
-  const list: string[] = stored ? JSON.parse(stored) : [];
-  if (!list.includes(ticker)) {
-    list.push(ticker);
-    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(list));
-  }
-}
-
-export function removeFromWatchlist(ticker: string) {
-  const stored = localStorage.getItem(WATCHLIST_KEY);
-  const list: string[] = stored ? JSON.parse(stored) : [];
-  localStorage.setItem(
-    WATCHLIST_KEY,
-    JSON.stringify(list.filter((t) => t !== ticker)),
-  );
-}
-
-export function isOnWatchlist(ticker: string): boolean {
-  const stored = localStorage.getItem(WATCHLIST_KEY);
-  if (!stored) return false;
-  try {
-    return (JSON.parse(stored) as string[]).includes(ticker);
-  } catch {
-    return false;
-  }
-}
-
-export function getWatchlist(): string[] {
-  const stored = localStorage.getItem(WATCHLIST_KEY);
-  if (!stored) return [];
-  try {
-    return JSON.parse(stored) as string[];
-  } catch {
-    return [];
-  }
-}
+import { addToWatchlist, removeFromWatchlist, useIsOnWatchlist } from "@/lib/watchlist";
 
 export function WatchlistButton({ ticker }: { ticker: string }) {
-  const [onList, setOnList] = useState(false);
-
-  useEffect(() => {
-    setOnList(isOnWatchlist(ticker));
-  }, [ticker]);
+  const onList = useIsOnWatchlist(ticker);
 
   const toggle = () => {
     if (onList) {
       removeFromWatchlist(ticker);
-      setOnList(false);
     } else {
       addToWatchlist(ticker);
-      setOnList(true);
     }
   };
 

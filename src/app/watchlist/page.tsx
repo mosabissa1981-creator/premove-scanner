@@ -1,15 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getWatchlist } from "@/components/ticker-detail";
+import { useWatchlist } from "@/lib/watchlist";
 
 export default function WatchlistPage() {
-  const [tickers, setTickers] = useState<string[]>([]);
-
-  useEffect(() => {
-    setTickers(getWatchlist());
-  }, []);
+  const tickers = useWatchlist();
 
   if (tickers.length === 0) {
     return (

@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -23,16 +24,26 @@ interface ApiKeyContextValue {
 
 const ApiKeyContext = createContext<ApiKeyContextValue | null>(null);
 
-function saveToLocalStorage(key: string) {
-  try {
-    if (key) localStorage.setItem(STORAGE_KEY, key);
-    else localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // localStorage may fail in private mode — cookie is the primary store
-  }
+const keyListeners = new Set<() => void>();
+
+function emitKeyChange() {
+  for (const listener of keyListeners) listener();
 }
 
-function readLocalStorage(): string {
+function subscribeKey(callback: () => void): () => void {
+  keyListeners.add(callback);
+  if (typeof window !== "undefined") {
+    window.addEventListener("storage", callback);
+  }
+  return () => {
+    keyListeners.delete(callback);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("storage", callback);
+    }
+  };
+}
+
+function getKeySnapshot(): string {
   try {
     return localStorage.getItem(STORAGE_KEY) ?? "";
   } catch {
@@ -40,12 +51,29 @@ function readLocalStorage(): string {
   }
 }
 
+function getServerKeySnapshot(): string {
+  return "";
+}
+
+function saveToLocalStorage(key: string) {
+  try {
+    if (key) localStorage.setItem(STORAGE_KEY, key);
+    else localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // localStorage may fail in private mode — cookie is the primary store
+  }
+  emitKeyChange();
+}
+
 function normalizeKey(raw: string): string {
   return raw.trim().replace(/^Bearer\s+/i, "");
 }
 
 export function ApiKeyProvider({ children }: { children: ReactNode }) {
-  const [apiKey, setApiKeyState] = useState("");
+  // Source the key from localStorage through an external store so we stay
+  // SSR-safe (server snapshot is empty) without synchronously calling setState
+  // inside an effect, which triggers cascading renders.
+  const apiKey = useSyncExternalStore(subscribeKey, getKeySnapshot, getServerKeySnapshot);
   const [hasServerCookie, setHasServerCookie] = useState(false);
   const [isReady, setIsReady] = useState(false);
 
@@ -60,13 +88,25 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const stored = readLocalStorage();
-    if (stored) {
-      setApiKeyState(stored);
-      setHasServerCookie(true);
+    let cancelled = false;
+
+    async function init() {
+      try {
+        const res = await fetch("/api/config", { credentials: "same-origin" });
+        const data = await res.json();
+        if (!cancelled) setHasServerCookie(Boolean(data.hasCookie || data.hasServerKey));
+      } catch {
+        if (!cancelled) setHasServerCookie(false);
+      } finally {
+        if (!cancelled) setIsReady(true);
+      }
     }
-    refreshStatus().finally(() => setIsReady(true));
-  }, [refreshStatus]);
+
+    init();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const setApiKey = useCallback(async (key: string) => {
     const trimmed = normalizeKey(key);
@@ -74,10 +114,9 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
       return { ok: false, error: "Paste your API key first" };
     }
 
-    // Optimistic: update state immediately so scan works even if cookie is slow
-    setApiKeyState(trimmed);
+    // Optimistic: persist locally first so scanning works immediately even if
+    // the cookie round-trip is slow. This also notifies subscribers.
     saveToLocalStorage(trimmed);
-    setHasServerCookie(true);
 
     try {
       const res = await fetch("/api/settings/save", {
@@ -92,9 +131,10 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
         return { ok: false, error: data.error ?? "Failed to save" };
       }
 
+      setHasServerCookie(true);
       return { ok: true };
     } catch {
-      // State already set — scan will still work via header in this session
+      // Local state already set — scan will still work via header this session.
       return { ok: true };
     }
   }, []);
@@ -105,7 +145,6 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     }
-    setApiKeyState("");
     saveToLocalStorage("");
     setHasServerCookie(false);
   }, []);
