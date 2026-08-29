@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "deploy": "wrangler deploy"
+    "deploy": "node scripts/cloudflare-deploy.mjs"
   },
   "dependencies": {
     "next": "16.3.3",
