@@ -171,8 +171,12 @@ export class UnusualWhalesClient {
     return this.get(`/api/stock/${ticker}/flow-alerts`, { limit }, 30_000);
   }
 
-  gexLevels(ticker: string) {
-    return this.get(`/api/stock/${ticker}/gex-levels`, {}, 120_000);
+  gexLevels(ticker: string, source: "oi" | "vol" = "oi") {
+    return this.get(`/api/stock/${ticker}/gex-levels`, { source }, 120_000);
+  }
+
+  greekExposureByExpiry(ticker: string) {
+    return this.get(`/api/stock/${ticker}/greek-exposure/expiry`, {}, 120_000);
   }
 
   darkpool(ticker: string, days = 5) {

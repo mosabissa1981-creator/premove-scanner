@@ -35,7 +35,8 @@ premove-scanner/
 
 | Route | Description |
 |-------|-------------|
-| `/` | Scanner — find early setups |
+| `/` | PreMove scanner — find early swing setups |
+| `/gex-scan` | GEX ratio scanner — call vs put gamma exposure |
 | `/settings` | Save Unusual Whales API key |
 | `/setup.html` | Plain HTML key entry (works on iPhone) |
 | `/watchlist` | Saved tickers |
@@ -44,6 +45,7 @@ premove-scanner/
 ## API routes
 
 - `GET /api/scan?limit=20` — Run confluence scan
+- `POST /api/gex-scan` — Run GEX call:put ratio scan (body: `{ tickers, expiry }`)
 - `GET /api/ticker/AAPL` — Single ticker analysis
 - `POST /api/settings/save` — Save API key (cookie)
 - `GET /api/config` — Check if key is configured
