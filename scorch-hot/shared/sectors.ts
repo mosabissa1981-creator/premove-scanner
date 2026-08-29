@@ -295,7 +295,7 @@ export async function buildSectorsPayload(): Promise<SectorsPayload> {
   return {
     generatedAt: new Date().toISOString(),
     asOf: timestamp,
-    benchmark: { ticker: "SPY", ...spy },
+    benchmark: spy,
     headline: `${leader.name} leads at ${fmtSigned(leader.change1d)}`,
     stockHeadline: topStock ? `${topStock.ticker} hottest at ${fmtSigned(topStock.change1d)}` : "No stock leaders",
     analysis: `${leader.name} leads the day at ${fmtSigned(leader.change1d)}, with heat still anchored to ${heatLeader.name} versus SPY. Flow favors ${rotationInto
