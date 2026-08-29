@@ -7,6 +7,7 @@ import { apiHeaders, useApiKey } from "@/lib/api-key-context";
 import type { ScanResult, TickerAnalysis } from "@/lib/unusualwhales/types";
 import { TickerCard } from "@/components/ticker-ui";
 import { TickerSearch } from "@/components/ticker-search";
+import { MarketTideBanner } from "@/components/market-tide-banner";
 
 export default function ScannerPage() {
   const { apiKey, hasKey } = useApiKey();
@@ -56,6 +57,8 @@ export default function ScannerPage() {
           </p>
         </Link>
       )}
+
+      <MarketTideBanner />
 
       <section>
         <h1 className="text-xl font-bold">Swing Trade Setups</h1>

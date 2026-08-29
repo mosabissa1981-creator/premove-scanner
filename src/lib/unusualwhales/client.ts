@@ -203,6 +203,10 @@ export class UnusualWhalesClient {
   stockInfo(ticker: string) {
     return this.get(`/api/stock/${ticker}/info`, {}, 86_400_000);
   }
+
+  marketTide(params: Record<string, string | number | boolean | undefined> = {}) {
+    return this.get("/api/market/market-tide", params, 120_000);
+  }
 }
 
 export function resolveApiKey(headerKey?: string | null, cookieKey?: string | null): string | null {
