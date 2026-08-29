@@ -19,8 +19,8 @@ Yahoo Finance Chart API v8 (`yahoo-finance-chart-v8`). No API key required.
 ## Stack
 
 - **Frontend:** Vite + React
-- **API:** Cloudflare Pages Functions (`/api/sectors`)
-- **Deploy:** Cloudflare Pages (`scorch-hot-sectors` project)
+- **API:** Cloudflare Worker (`worker/index.ts` + `/api/*` routes)
+- **Deploy:** Cloudflare Workers Builds (`scorch-hot-sectors` project)
 
 ## Local development
 
@@ -61,13 +61,13 @@ npm run deploy
    ```
 3. Cloudflare Dashboard → **Workers & Pages** → **scorch-hot-sectors**
 4. **Settings** → **Builds** → Connect to GitHub → select `scorch-hot`
-5. Build command: `npm run build` · Output directory: `dist`
+5. Build command: `npm run build` · Deploy command: `npx wrangler deploy`
 
 **Option B — monorepo (this repo)**
 
 1. Merge the `scorch-hot/` folder into `premove-scanner` (or keep on a branch)
 2. Connect Cloudflare to `premove-scanner` with **Root directory** = `scorch-hot`
-3. Build command: `npm run build` · Output directory: `dist`
+3. Build command: `npm run build` · Deploy command: `npx wrangler deploy`
 
 Future pushes auto-deploy — no more manual `wrangler deploy`.
 
