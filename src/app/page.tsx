@@ -7,6 +7,7 @@ import { apiHeaders, useApiKey } from "@/lib/api-key-context";
 import type { ScanResult, TickerAnalysis } from "@/lib/unusualwhales/types";
 import { TickerCard } from "@/components/ticker-ui";
 import { TickerSearch } from "@/components/ticker-search";
+import { cleanErrorMessage } from "@/lib/format-error";
 
 export default function ScannerPage() {
   const { apiKey, hasKey } = useApiKey();
@@ -33,7 +34,7 @@ export default function ScannerPage() {
       if (!res.ok) throw new Error(data.error ?? "Scan failed");
       setResult(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Scan failed");
+      setError(cleanErrorMessage(err instanceof Error ? err.message : "Scan failed"));
     } finally {
       setLoading(false);
     }

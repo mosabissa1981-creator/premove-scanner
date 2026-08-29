@@ -6,7 +6,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useApiKey } from "@/lib/api-key-context";
 
 function SettingsForm() {
-  const { refreshStatus, clearApiKey, hasKey } = useApiKey();
+  const { refreshStatus, clearApiKey, hasKey, persistLocalKey, isReady } = useApiKey();
   const router = useRouter();
   const searchParams = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -55,6 +55,12 @@ function SettingsForm() {
         <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-4 py-4 text-center">
           <p className="text-lg font-semibold text-emerald-300">Saved!</p>
           <p className="mt-1 text-sm text-emerald-400/80">Your API key is connected.</p>
+          {isReady && !hasKey && (
+            <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+              Key saved in this browser, but the server cookie was not detected. Tap Save Key once
+              more, or use the link below if scanning still fails.
+            </p>
+          )}
           <button
             type="button"
             onClick={() => router.push("/")}
@@ -81,6 +87,10 @@ function SettingsForm() {
       <form
         method="POST"
         action="/api/settings/save"
+        onSubmit={() => {
+          const key = inputRef.current?.value ?? "";
+          if (key.trim()) persistLocalKey(key);
+        }}
         className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4"
       >
         <label htmlFor="api-key" className="mb-2 block text-sm font-medium text-zinc-300">
