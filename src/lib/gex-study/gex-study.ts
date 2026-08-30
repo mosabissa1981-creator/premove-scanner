@@ -184,7 +184,6 @@ export async function fetchGexStudy(
 
   const fullSeries = buildStrikeSeries(strikeRes.data ?? []);
   const totals = summarizeStrikeSeries(fullSeries);
-  const visible = filterStrikeWindow(fullSeries, stockPrice);
 
   let callWall: number | null = null;
   let putWall: number | null = null;
@@ -227,7 +226,7 @@ export async function fetchGexStudy(
     putGex: totals.putGex,
     regime,
     flipDistancePct,
-    strikes: visible,
+    strikes: fullSeries,
     availableExpiries,
   };
 }
