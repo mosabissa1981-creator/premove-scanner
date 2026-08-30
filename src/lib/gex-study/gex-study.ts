@@ -900,6 +900,17 @@ export async function fetchGexStudy(
     }
   }
 
+  let profileRows = strikeRows;
+  if (useAll && strikePayload.source === "spot") {
+    const greekRows = await fetchGreekStrikeRows(client, ticker, undefined);
+    if (hasUsableSpotStrikes(greekRows)) {
+      profileRows = greekRows;
+      if (greekRowsNeedSpotScale(profileRows) && stockPrice != null && stockPrice > 0) {
+        profileRows = scaleGreekRowsToSpotGex(profileRows, stockPrice);
+      }
+    }
+  }
+
   const expiryRows = exposureRes.data ?? [];
   const availableExpiries = expiryRows
     .map((row) => ({ expiry: expiryKey(row), dte: row.dte }))
@@ -907,9 +918,10 @@ export async function fetchGexStudy(
     .sort((a, b) => a.dte - b.dte);
 
   let flipSeries = buildFlipSeries(strikeRows, stockPrice);
-  let profileSource = buildProfileSourceSeries(strikeRows);
+  let profileSource = buildProfileSourceSeries(profileRows);
   let fullSeries = buildStrikeSeries(strikeRows, stockPrice);
   let totals = summarizeStrikeSeries(fullSeries);
+  const profileSharesBarScale = profileRows === strikeRows;
 
   const authoritativeNet = useAll ? latestSpotNetGex(spotTotalsData) : null;
   if (authoritativeNet != null) {
@@ -920,7 +932,9 @@ export async function fetchGexStudy(
         const factor = totals.netGex / strikeNet;
         fullSeries = scaleStrikeSeries(fullSeries, factor);
         flipSeries = scaleStrikeSeries(flipSeries, factor);
-        profileSource = scaleStrikeSeries(profileSource, factor);
+        if (profileSharesBarScale) {
+          profileSource = scaleStrikeSeries(profileSource, factor);
+        }
       }
     }
   } else if (strikePayload.source === "greek" && stockPrice != null && stockPrice > 0) {
