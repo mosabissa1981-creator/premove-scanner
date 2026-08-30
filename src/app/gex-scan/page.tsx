@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
+import { TickerSearch } from "@/components/ticker-search";
 import { filterAndSortGexRows, filterByGammaFlip, gexSides, tierClass, type GammaFlipFilter } from "@/lib/gex-scan/gex-scan";
 import type { GexExpiryMode, GexScanResult, GexScanRow } from "@/lib/unusualwhales/types";
 
@@ -274,13 +275,21 @@ export default function GexScanPage() {
         </Link>
       )}
 
-      <section>
-        <h1 className="text-xl font-bold">GEX Scan</h1>
-        <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-          Compare <strong className="font-medium text-zinc-200">price vs gamma flip</strong> to see if a
-          name is above or below the regime line. Green <strong className="text-emerald-400">Above flip</strong>{" "}
-          = positive gamma. Red <strong className="text-red-400">Below flip</strong> = negative gamma.
-        </p>
+      <section className="space-y-4">
+        <TickerSearch
+          destination="gex-study"
+          placeholder="Jump to GEX walls (e.g. SMCI, RKLB)"
+          buttonLabel="Study"
+        />
+
+        <div>
+          <h1 className="text-xl font-bold">GEX Scan</h1>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+            Compare <strong className="font-medium text-zinc-200">price vs gamma flip</strong> to see if a
+            name is above or below the regime line. Green <strong className="text-emerald-400">Above flip</strong>{" "}
+            = positive gamma. Red <strong className="text-red-400">Below flip</strong> = negative gamma.
+          </p>
+        </div>
       </section>
 
       <div className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
