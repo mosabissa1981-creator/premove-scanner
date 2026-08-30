@@ -257,19 +257,24 @@ export function computeGammaFlipFromWindow(
 ): number | null {
   if (!points.length || stockPrice == null || stockPrice <= 0) return null;
 
-  const window = rebaseProfileWindow(points, stockPrice);
+  const sorted = [...points].sort((a, b) => a.strike - b.strike);
+  const window = filterStrikeWindow(points, stockPrice);
+  const windowStrikes = new Set(window.map((point) => point.strike));
+  const profileWindow = buildCumulativeProfile(sorted).filter((point) =>
+    windowStrikes.has(point.strike),
+  );
   const minStrike = stockPrice * 0.45;
 
-  for (let i = window.length - 1; i >= 1; i--) {
-    const prev = window[i - 1];
-    const curr = window[i];
+  for (let i = profileWindow.length - 1; i >= 1; i--) {
+    const prev = profileWindow[i - 1];
+    const curr = profileWindow[i];
     if (curr.strike > stockPrice || prev.strike < minStrike) continue;
     if (prev.profile <= 0 && curr.profile >= 0) {
       return interpolateRisingCrossing(prev, curr);
     }
   }
 
-  const crossings = collectProfileCrossings(window).filter(
+  const crossings = collectProfileCrossings(profileWindow).filter(
     (crossing) => crossing.strike >= minStrike && crossing.strike <= stockPrice + 1e-6,
   );
   if (!crossings.length) return null;
@@ -368,34 +373,41 @@ export function buildCumulativeProfile(points: GexStrikePoint[]): GexStrikePoint
   });
 }
 
-/** Cumulative gamma profile rebased to zero at the gamma flip (reflects bar volume). */
+/** Full-chain cumulative gamma profile for chart display (OptionCharts-style). */
 export function buildCumulativeProfileAtFlip(
   points: GexStrikePoint[],
   stockPrice: number | null,
-  gammaFlip: number | null,
+  gammaFlip: number | null = null,
 ): GexStrikePoint[] {
+  const sorted = [...points].sort((a, b) => a.strike - b.strike);
+  if (!sorted.length) return [];
+
   const window = filterStrikeWindow(points, stockPrice);
   if (!window.length) return [];
   if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
 
-  const cumulative = buildCumulativeProfile(window);
-  const atFlip = interpolateProfileAtStrike(cumulative, gammaFlip) ?? 0;
-  const rebased = cumulative.map((point) => ({
-    ...point,
-    profile: point.profile - atFlip,
-  }));
+  const fullCumulative = buildCumulativeProfile(sorted);
+  const cumByStrike = new Map(fullCumulative.map((point) => [point.strike, point.profile]));
+  const windowStrikes = new Set(window.map((point) => point.strike));
 
-  const hasFlipStrike = rebased.some((point) => Math.abs(point.strike - gammaFlip) < 1e-6);
-  if (hasFlipStrike) return rebased;
+  const chart = sorted
+    .filter((point) => windowStrikes.has(point.strike))
+    .map((point) => ({
+      ...point,
+      profile: cumByStrike.get(point.strike) ?? 0,
+    }));
+
+  const hasFlipStrike = chart.some((point) => Math.abs(point.strike - gammaFlip) < 1e-6);
+  if (hasFlipStrike) return chart;
 
   const anchor: GexStrikePoint = {
     strike: gammaFlip,
     callGex: 0,
     putGex: 0,
     netGex: 0,
-    profile: 0,
+    profile: interpolateProfileAtStrike(fullCumulative, gammaFlip) ?? 0,
   };
-  return [...rebased, anchor].sort((a, b) => a.strike - b.strike);
+  return [...chart, anchor].sort((a, b) => a.strike - b.strike);
 }
 
 /** Gamma profile anchored at zero on the flip strike (negative below, positive above). */
