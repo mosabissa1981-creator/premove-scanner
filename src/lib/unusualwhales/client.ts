@@ -208,6 +208,16 @@ export class UnusualWhalesClient {
     return this.get(`/api/stock/${ticker}/greek-exposure/strike-expiry`, { expiry }, 120_000);
   }
 
+  optionChains(
+    ticker: string,
+    params: { date?: string; greeks?: boolean } = {},
+  ) {
+    return this.get(`/api/stock/${ticker}/option-chains`, {
+      date: params.date,
+      greeks: params.greeks,
+    }, 120_000);
+  }
+
   spotExposureByStrike(
     ticker: string,
     params: {

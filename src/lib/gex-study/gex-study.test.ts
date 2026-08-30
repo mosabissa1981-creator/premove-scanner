@@ -13,6 +13,7 @@ import {
   filterStrikeWindow,
   hasUsableSpotStrikes,
   interpolateProfileAtStrike,
+  parseOptionChainLegs,
   pickAllExpiryGammaFlip,
   pickDeepestSaneFlipBelowSpot,
   prepareChartStrikeSeries,
@@ -31,6 +32,48 @@ const rows: UwSpotExposureStrikeRow[] = [
   { strike: "75", call_gamma_oi: "200000", put_gamma_oi: "-5000" },
   { strike: "80", call_gamma_oi: "180000", put_gamma_oi: "-15000" },
 ];
+
+describe("parseOptionChainLegs", () => {
+  it("maps enriched UW rows into simulation legs", () => {
+    const legs = parseOptionChainLegs(
+      [
+        {
+          strike: "250",
+          expiry: "2026-09-19",
+          type: "put",
+          open_interest: "75000",
+          iv: "0.28",
+        },
+        {
+          strike: "275",
+          expiry: "2026-09-19",
+          option_type: "call",
+          oi: 90000,
+          implied_volatility: "27",
+        },
+        "AAPL250919C00180000",
+      ],
+      undefined,
+      new Map([["2026-09-19", 30]]),
+    );
+
+    expect(legs).toHaveLength(2);
+    expect(legs[0]).toMatchObject({ strike: 250, type: "P", oi: 75_000, iv: 0.28, dte: 30 });
+    expect(legs[1]).toMatchObject({ strike: 275, type: "C", oi: 90_000, iv: 0.27, dte: 30 });
+  });
+
+  it("filters by expiry when a single expiry is requested", () => {
+    const legs = parseOptionChainLegs(
+      [
+        { strike: "250", expiry: "2026-09-19", type: "P", open_interest: "100" },
+        { strike: "260", expiry: "2026-10-17", type: "C", open_interest: "200" },
+      ],
+      "2026-09-19",
+    );
+    expect(legs).toHaveLength(1);
+    expect(legs[0]?.strike).toBe(250);
+  });
+});
 
 describe("hasUsableSpotStrikes", () => {
   it("rejects rows without strike or gamma values", () => {
