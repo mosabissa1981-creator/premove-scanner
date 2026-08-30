@@ -13,7 +13,6 @@ import {
   zoomStrikeViewport,
   type StrikeViewport,
 } from "@/lib/gex-study/gex-chart-viewport";
-import { computeNetGexBarFlip } from "@/lib/gex-study/gex-study";
 
 const CHART_WIDTH = 720;
 const CHART_HEIGHT = 380;
@@ -163,10 +162,6 @@ export function GexStrikeChart({
 }: GexStrikeChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bounds = useMemo(() => strikeBounds(strikes), [strikes]);
-  const chartGammaFlip = useMemo(
-    () => computeNetGexBarFlip(strikes, stockPrice) ?? gammaFlip,
-    [strikes, stockPrice, gammaFlip],
-  );
   const [viewport, setViewport] = useState<StrikeViewport>(() =>
     initialStrikeViewport(strikes, stockPrice),
   );
@@ -420,8 +415,8 @@ export function GexStrikeChart({
   if (putWall != null && putWall >= strikeMin && putWall <= strikeMax) {
     levels.push({ value: putWall, label: "Put Wall", color: "#f87171" });
   }
-  if (chartGammaFlip != null && chartGammaFlip >= strikeMin && chartGammaFlip <= strikeMax) {
-    levels.push({ value: chartGammaFlip, label: "Gamma Flip", color: "#d4a853" });
+  if (gammaFlip != null && gammaFlip >= strikeMin && gammaFlip <= strikeMax) {
+    levels.push({ value: gammaFlip, label: "Gamma Flip", color: "#d4a853" });
   }
   if (callWall != null && callWall >= strikeMin && callWall <= strikeMax) {
     levels.push({ value: callWall, label: "Call Wall", color: "#34d399" });

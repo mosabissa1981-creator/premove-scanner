@@ -415,11 +415,8 @@ export function prepareChartStrikeSeries(
   const window = filterStrikeWindow(points, stockPrice);
   if (!window.length) return [];
 
-  const barFlip = computeNetGexBarFlip(window, stockPrice);
-  const anchorFlip = barFlip ?? gammaFlip;
-
-  if (anchorFlip == null) return rebaseProfileWindow(points, stockPrice);
-  return buildFlipAnchoredProfile(points, stockPrice, anchorFlip);
+  if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
+  return buildFlipAnchoredProfile(points, stockPrice, gammaFlip);
 }
 
 /** All-expiry flip: profile when reliable, OI gamma_flip, deeper vol flip for MSFT-style. */

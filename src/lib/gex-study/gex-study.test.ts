@@ -231,7 +231,7 @@ describe("computeNetGexBarFlip", () => {
 });
 
 describe("prepareChartStrikeSeries", () => {
-  it("anchors profile zero at the red-to-green bar transition", () => {
+  it("anchors profile zero at gamma flip for a smooth flip-anchored curve", () => {
     const rows: UwSpotExposureStrikeRow[] = [
       { strike: "240", call_gamma_oi: "0", put_gamma_oi: "-100" },
       { strike: "250", call_gamma_oi: "0", put_gamma_oi: "-50" },
@@ -241,9 +241,9 @@ describe("prepareChartStrikeSeries", () => {
       { strike: "280", call_gamma_oi: "80", put_gamma_oi: "0" },
     ];
     const series = buildStrikeSeries(rows, 266);
-    const chart = prepareChartStrikeSeries(series, 266, 256.2, "spot");
-    const barFlip = computeNetGexBarFlip(series, 266)!;
-    const atFlip = interpolateProfileAtStrike(chart, barFlip);
+    const gammaFlip = 257;
+    const chart = prepareChartStrikeSeries(series, 266, gammaFlip, "spot");
+    const atFlip = interpolateProfileAtStrike(chart, gammaFlip);
     const below = interpolateProfileAtStrike(chart, 250);
     const above = interpolateProfileAtStrike(chart, 270);
     expect(atFlip).toBeCloseTo(0, 0);
@@ -264,11 +264,11 @@ describe("prepareChartStrikeSeries", () => {
     const above = chart.find((point) => point.strike === 360);
     expect(below?.profile).toBeLessThan(0);
     expect(above?.profile).toBeGreaterThan(0);
-    const barFlip = computeNetGexBarFlip(series, 355)!;
-    expect(interpolateProfileAtStrike(chart, barFlip)).toBeCloseTo(0, 0);
+    const anchor = chart.find((point) => Math.abs(point.strike - 345) < 1e-6);
+    expect(anchor?.profile).toBe(0);
   });
 
-  it("rebases profile when no bar transition exists in the window", () => {
+  it("rebases profile when gamma flip is unavailable", () => {
     const rows: UwSpotExposureStrikeRow[] = [
       { strike: "150", call_gamma_oi: "100", put_gamma_oi: "-50" },
       { strike: "180", call_gamma_oi: "50", put_gamma_oi: "-200" },
@@ -282,7 +282,6 @@ describe("prepareChartStrikeSeries", () => {
     const chart = prepareChartStrikeSeries(series, 217.55);
     expect(chart[0]?.strike).toBeGreaterThanOrEqual(150);
     expect(chart[0]?.profile).toBe(0);
-    expect(computeNetGexBarFlip(series, 217.55)).toBeNull();
   });
 });
 
