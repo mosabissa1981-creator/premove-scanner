@@ -27,6 +27,12 @@ const LABEL_FONT = 20;
 const VALUE_FONT = 22;
 const TAP_THRESHOLD_PX = 10;
 
+/** Top-of-chart level labels (neutral); lines/badges keep semantic colors. */
+const LEVEL_LABEL_COLOR = "#a1a1aa";
+const PROFILE_FILL_NEGATIVE = "#fee2e2";
+const PROFILE_FILL_POSITIVE = "#dcfce7";
+const PROFILE_FILL_OPACITY = 0.45;
+
 function formatAxisMoney(value: number, signed = false): string {
   const abs = Math.abs(value);
   const sign = value < 0 ? "-" : signed && value > 0 ? "+" : "";
@@ -51,8 +57,8 @@ function buildProfileFillPolygons(
   xForStrike: (strike: number) => number,
   yForProfile: (profile: number) => number,
   zeroY: number,
-): { negative: string; positive: string } {
-  if (points.length < 2) return { negative: "", positive: "" };
+): { negative: string[]; positive: string[] } {
+  if (points.length < 2) return { negative: [], positive: [] };
 
   const negative: string[] = [];
   const positive: string[] = [];
@@ -91,10 +97,7 @@ function buildProfileFillPolygons(
     }
   }
 
-  return {
-    negative: negative.join(" "),
-    positive: positive.join(" "),
-  };
+  return { negative, positive };
 }
 
 interface BottomLabel {
@@ -586,13 +589,25 @@ export function GexStrikeChart({
               </text>
             ))}
 
-            {profileFills.negative && (
-              <polygon points={profileFills.negative} fill="#f87171" opacity={0.14} stroke="none" />
-            )}
+            {profileFills.negative.map((points, index) => (
+              <polygon
+                key={`profile-fill-neg-${index}`}
+                points={points}
+                fill={PROFILE_FILL_NEGATIVE}
+                opacity={PROFILE_FILL_OPACITY}
+                stroke="none"
+              />
+            ))}
 
-            {profileFills.positive && (
-              <polygon points={profileFills.positive} fill="#d4a853" opacity={0.18} stroke="none" />
-            )}
+            {profileFills.positive.map((points, index) => (
+              <polygon
+                key={`profile-fill-pos-${index}`}
+                points={points}
+                fill={PROFILE_FILL_POSITIVE}
+                opacity={PROFILE_FILL_OPACITY}
+                stroke="none"
+              />
+            ))}
 
             <polyline
               points={profileLine}
@@ -621,7 +636,7 @@ export function GexStrikeChart({
                   x={x}
                   y={PAD.top - 12 + labelOffset}
                   textAnchor="middle"
-                  fill={level.color}
+                  fill={LEVEL_LABEL_COLOR}
                   fontSize={LABEL_FONT}
                   fontWeight="700"
                 >
