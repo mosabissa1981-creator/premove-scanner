@@ -134,15 +134,15 @@ export default function GexStudyPage({ params }: { params: Promise<{ ticker: str
 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-bold">{ticker ?? "…"} GEX Walls</h1>
-            <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+            <h1 className="text-2xl font-bold">{ticker ?? "…"} GEX Walls</h1>
+            <p className="mt-2 text-base leading-relaxed text-zinc-400 sm:text-sm">
               Gamma exposure by strike with put wall, gamma flip, and call wall — similar to
               OptionCharts-style GEX study.
             </p>
           </div>
           {badge && (
             <span
-              className={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide ${badge.className}`}
+              className={`rounded-full border px-3 py-1.5 text-sm font-bold uppercase tracking-wide ${badge.className}`}
             >
               {badge.label}
             </span>
@@ -152,7 +152,7 @@ export default function GexStudyPage({ params }: { params: Promise<{ ticker: str
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-2">
-          <label htmlFor="expiry-select" className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+          <label htmlFor="expiry-select" className="text-sm font-medium uppercase tracking-wide text-zinc-400">
             Expiration
           </label>
           <select
@@ -164,7 +164,7 @@ export default function GexStudyPage({ params }: { params: Promise<{ ticker: str
               if (ticker) loadStudy(ticker, value);
             }}
             disabled={loading || !study?.availableExpiries.length}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none disabled:opacity-50"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-3 text-base text-zinc-100 outline-none disabled:opacity-50 sm:py-2 sm:text-sm"
           >
             <option value="all">All expiries</option>
             {(study?.availableExpiries ?? []).map((row) => (
@@ -175,7 +175,7 @@ export default function GexStudyPage({ params }: { params: Promise<{ ticker: str
           </select>
         </div>
         <div className="space-y-2">
-          <label htmlFor="mode-select" className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+          <label htmlFor="mode-select" className="text-sm font-medium uppercase tracking-wide text-zinc-400">
             Default expiry mode
           </label>
           <select
@@ -187,7 +187,7 @@ export default function GexStudyPage({ params }: { params: Promise<{ ticker: str
               if (ticker) loadStudy(ticker, undefined, value);
             }}
             disabled={loading}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none disabled:opacity-50"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-3 text-base text-zinc-100 outline-none disabled:opacity-50 sm:py-2 sm:text-sm"
           >
             <option value="daily">Daily (0DTE / nearest)</option>
             <option value="weekly">Weekly (next Friday)</option>
@@ -220,58 +220,58 @@ export default function GexStudyPage({ params }: { params: Promise<{ ticker: str
           />
 
           <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 sm:p-5">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-400 sm:text-base">
+            <h2 className="text-base font-semibold uppercase tracking-wide text-zinc-300 sm:text-sm sm:text-zinc-400">
               Gamma Exposure Stats
             </h2>
-            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5">
+            <div className="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
               <div>
-                <div className="text-sm text-zinc-500">Net GEX ($ / 1% move)</div>
+                <div className="text-base text-zinc-400 sm:text-sm sm:text-zinc-500">Net GEX ($ / 1% move)</div>
                 <div
-                  className={`mt-1 text-2xl font-bold tabular-nums sm:text-xl ${study.netGex >= 0 ? "text-emerald-400" : "text-red-400"}`}
+                  className={`mt-1.5 text-3xl font-bold tabular-nums leading-tight sm:text-2xl ${study.netGex >= 0 ? "text-emerald-400" : "text-red-400"}`}
                 >
                   {formatMoney(study.netGex)}
                 </div>
               </div>
               <div>
-                <div className="text-sm text-zinc-500">Call GEX</div>
-                <div className="mt-1 text-2xl font-bold tabular-nums text-emerald-400 sm:text-xl">
+                <div className="text-base text-zinc-400 sm:text-sm sm:text-zinc-500">Call GEX</div>
+                <div className="mt-1.5 text-3xl font-bold tabular-nums leading-tight text-emerald-400 sm:text-2xl">
                   {formatMoney(study.callGex)}
                 </div>
               </div>
               <div>
-                <div className="text-sm text-zinc-500">Put GEX</div>
-                <div className="mt-1 text-2xl font-bold tabular-nums text-red-400 sm:text-xl">
+                <div className="text-base text-zinc-400 sm:text-sm sm:text-zinc-500">Put GEX</div>
+                <div className="mt-1.5 text-3xl font-bold tabular-nums leading-tight text-red-400 sm:text-2xl">
                   {formatMoney(study.putGex)}
                 </div>
               </div>
               <div>
-                <div className="text-sm text-zinc-500">Spot</div>
-                <div className="mt-1 text-2xl font-bold tabular-nums text-blue-300 sm:text-xl">
+                <div className="text-base text-zinc-400 sm:text-sm sm:text-zinc-500">Spot</div>
+                <div className="mt-1.5 text-3xl font-bold tabular-nums leading-tight text-blue-300 sm:text-2xl">
                   {formatPrice(study.stockPrice)}
                 </div>
               </div>
               <div>
-                <div className="text-sm text-zinc-500">Put Wall</div>
-                <div className="mt-1 text-2xl font-bold tabular-nums text-red-300 sm:text-xl">
+                <div className="text-base text-zinc-400 sm:text-sm sm:text-zinc-500">Put Wall</div>
+                <div className="mt-1.5 text-3xl font-bold tabular-nums leading-tight text-red-300 sm:text-2xl">
                   {formatPrice(study.putWall)}
                 </div>
               </div>
               <div>
-                <div className="text-sm text-zinc-500">Gamma Flip</div>
-                <div className="mt-1 text-2xl font-bold tabular-nums text-zinc-100 sm:text-xl">
+                <div className="text-base text-zinc-400 sm:text-sm sm:text-zinc-500">Gamma Flip</div>
+                <div className="mt-1.5 text-3xl font-bold tabular-nums leading-tight text-zinc-100 sm:text-2xl">
                   {formatPrice(study.gammaFlip)}
                 </div>
               </div>
               <div>
-                <div className="text-sm text-zinc-500">Call Wall</div>
-                <div className="mt-1 text-2xl font-bold tabular-nums text-emerald-300 sm:text-xl">
+                <div className="text-base text-zinc-400 sm:text-sm sm:text-zinc-500">Call Wall</div>
+                <div className="mt-1.5 text-3xl font-bold tabular-nums leading-tight text-emerald-300 sm:text-2xl">
                   {formatPrice(study.callWall)}
                 </div>
               </div>
               <div>
-                <div className="text-sm text-zinc-500">Distance to flip</div>
+                <div className="text-base text-zinc-400 sm:text-sm sm:text-zinc-500">Distance to flip</div>
                 <div
-                  className={`mt-1 text-2xl font-bold tabular-nums sm:text-xl ${study.regime === "positive" ? "text-emerald-400" : study.regime === "negative" ? "text-red-400" : "text-zinc-300"}`}
+                  className={`mt-1.5 text-3xl font-bold tabular-nums leading-tight sm:text-2xl ${study.regime === "positive" ? "text-emerald-400" : study.regime === "negative" ? "text-red-400" : "text-zinc-300"}`}
                 >
                   {study.flipDistancePct != null
                     ? `${study.flipDistancePct >= 0 ? "+" : ""}${study.flipDistancePct.toFixed(1)}%`
@@ -279,15 +279,15 @@ export default function GexStudyPage({ params }: { params: Promise<{ ticker: str
                 </div>
               </div>
               <div>
-                <div className="text-sm text-zinc-500">Gamma Magnet</div>
-                <div className="mt-1 text-2xl font-bold tabular-nums text-amber-300 sm:text-xl">
+                <div className="text-base text-zinc-400 sm:text-sm sm:text-zinc-500">Gamma Magnet</div>
+                <div className="mt-1.5 text-3xl font-bold tabular-nums leading-tight text-amber-300 sm:text-2xl">
                   {formatPrice(study.gammaMagnet)}
                 </div>
               </div>
             </div>
           </section>
 
-          <p className="text-sm text-zinc-500">
+          <p className="text-base text-zinc-500 sm:text-sm">
             Expiry {study.expiry} · Updated{" "}
             {new Date(study.scannedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
           </p>
