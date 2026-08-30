@@ -505,7 +505,58 @@ export function collectRelevantOiFlips(
     );
 }
 
-/** All-expiry flip: profile when reliable, OI gamma_flip, deeper vol flip for MSFT-style. */
+/** Chart gamma flip: deepest UW OI/vol flip below spot, with profile fallback. */
+export function resolveChartGammaFlip(
+  profileFlip: number | null,
+  stockPrice: number,
+  oiLevels?: UwGexLevels | null,
+  volLevels?: UwGexLevels | null,
+  extraOiFlip?: number | null,
+  extraVolFlip?: number | null,
+): number | null {
+  if (stockPrice <= 0) return profileFlip;
+
+  const oiFlips = [
+    ...collectRelevantOiFlips(oiLevels, stockPrice),
+    ...(extraOiFlip != null && isRelevantGammaFlip(extraOiFlip, stockPrice) ? [extraOiFlip] : []),
+  ];
+  const volFlips = [
+    ...collectRelevantOiFlips(volLevels, stockPrice),
+    ...(extraVolFlip != null && isRelevantGammaFlip(extraVolFlip, stockPrice) ? [extraVolFlip] : []),
+  ];
+  const oiDeep = oiFlips.length ? Math.min(...oiFlips) : null;
+  const volDeep = volFlips.length ? Math.min(...volFlips) : null;
+  const profile =
+    profileFlip != null && isSaneGammaFlip(profileFlip, stockPrice) ? profileFlip : null;
+
+  // MSFT-style: vol flip materially deeper than OI when both sit near spot.
+  if (
+    oiDeep != null &&
+    volDeep != null &&
+    volDeep < oiDeep &&
+    (oiDeep - volDeep) / stockPrice > 0.05 &&
+    profile != null &&
+    Math.abs(profile - oiDeep) / stockPrice < 0.05
+  ) {
+    return volDeep;
+  }
+
+  // Prefer deepest OI flip when profile zero crossing sits meaningfully above it.
+  if (oiDeep != null) {
+    if (profile == null || profile - oiDeep > stockPrice * 0.02) return oiDeep;
+    if (profile < stockPrice * 0.75 && oiDeep > profile) return oiDeep;
+  }
+
+  if (profile != null && volDeep != null && volDeep < profile) {
+    if ((profile - volDeep) / stockPrice > 0.05) return volDeep;
+  }
+  if (profile != null) return profile;
+  if (oiDeep != null) return oiDeep;
+  if (volDeep != null) return volDeep;
+  return null;
+}
+
+/** @deprecated Use resolveChartGammaFlip */
 export function pickAllExpiryGammaFlip(
   profileFlip: number | null,
   oiFlip: number | null,
@@ -514,37 +565,14 @@ export function pickAllExpiryGammaFlip(
   oiLevels?: UwGexLevels | null,
   volLevels?: UwGexLevels | null,
 ): number | null {
-  const relevant = (flip: number | null | undefined): number | null =>
-    flip != null && stockPrice > 0 && isRelevantGammaFlip(flip, stockPrice) && flip <= stockPrice + 1e-6
-      ? flip
-      : null;
-
-  const profile = relevant(profileFlip);
-  const oiFlips = [
-    ...collectRelevantOiFlips(oiLevels, stockPrice),
-    ...collectRelevantOiFlips(volLevels, stockPrice),
-  ];
-  const uniqueOiFlips = [...new Set(oiFlips)];
-  const oiDeep = uniqueOiFlips.length ? Math.min(...uniqueOiFlips) : null;
-  const oi = relevant(oiFlip) ?? oiDeep;
-  const vol = relevant(volFlip);
-
-  if (profile && oiDeep && oiDeep < profile && profile - oiDeep > stockPrice * 0.03) {
-    if (vol && vol < oiDeep && (oiDeep - vol) / stockPrice > 0.05) return vol;
-    return oiDeep;
-  }
-
-  if (profile && oi) {
-    if (profile < stockPrice * 0.75 && oi > profile) return oi;
-    const nearest = Math.min(profile, oi);
-    if (vol && vol < nearest && (nearest - vol) / stockPrice > 0.05) return vol;
-    return nearest;
-  }
-  if (profile && vol && vol < profile) return vol;
-  if (profile) return profile;
-  if (oi) return oi;
-  if (vol) return vol;
-  return null;
+  return resolveChartGammaFlip(
+    profileFlip,
+    stockPrice,
+    oiLevels,
+    volLevels,
+    oiFlip,
+    volFlip,
+  );
 }
 
 export function computeWallsFromSeries(
@@ -864,9 +892,7 @@ export async function fetchGexStudy(
   const [exposureRes, levelsOiRes, levelsVolRes, spotTotalsRes] = await Promise.all([
     client.greekExposureByExpiry(ticker) as Promise<UwDataResponse<UwGreekExposureExpiryRow[]>>,
     client.gexLevels(ticker, "oi", tradingDate) as Promise<UwDataResponse<UwGexLevels>>,
-    useAll
-      ? (client.gexLevels(ticker, "vol", tradingDate) as Promise<UwDataResponse<UwGexLevels>>)
-      : Promise.resolve(null),
+    client.gexLevels(ticker, "vol", tradingDate) as Promise<UwDataResponse<UwGexLevels>>,
     useAll
       ? (client.spotExposures(ticker) as Promise<UwDataResponse<UwSpotExposureSnapshot[]>>)
       : Promise.resolve(null),
@@ -900,17 +926,6 @@ export async function fetchGexStudy(
     }
   }
 
-  let profileRows = strikeRows;
-  if (useAll && strikePayload.source === "spot") {
-    const greekRows = await fetchGreekStrikeRows(client, ticker, undefined);
-    if (hasUsableSpotStrikes(greekRows)) {
-      profileRows = greekRows;
-      if (greekRowsNeedSpotScale(profileRows) && stockPrice != null && stockPrice > 0) {
-        profileRows = scaleGreekRowsToSpotGex(profileRows, stockPrice);
-      }
-    }
-  }
-
   const expiryRows = exposureRes.data ?? [];
   const availableExpiries = expiryRows
     .map((row) => ({ expiry: expiryKey(row), dte: row.dte }))
@@ -918,10 +933,9 @@ export async function fetchGexStudy(
     .sort((a, b) => a.dte - b.dte);
 
   let flipSeries = buildFlipSeries(strikeRows, stockPrice);
-  let profileSource = buildProfileSourceSeries(profileRows);
+  let profileSource = buildProfileSourceSeries(strikeRows);
   let fullSeries = buildStrikeSeries(strikeRows, stockPrice);
   let totals = summarizeStrikeSeries(fullSeries);
-  const profileSharesBarScale = profileRows === strikeRows;
 
   const authoritativeNet = useAll ? latestSpotNetGex(spotTotalsData) : null;
   if (authoritativeNet != null) {
@@ -932,9 +946,7 @@ export async function fetchGexStudy(
         const factor = totals.netGex / strikeNet;
         fullSeries = scaleStrikeSeries(fullSeries, factor);
         flipSeries = scaleStrikeSeries(flipSeries, factor);
-        if (profileSharesBarScale) {
-          profileSource = scaleStrikeSeries(profileSource, factor);
-        }
+        profileSource = scaleStrikeSeries(profileSource, factor);
       }
     }
   } else if (strikePayload.source === "greek" && stockPrice != null && stockPrice > 0) {
@@ -944,8 +956,6 @@ export async function fetchGexStudy(
   const profileFlip =
     computeGammaFlipDeep(profileSource, stockPrice) ??
     computeGammaFlipFromWindow(profileSource, stockPrice);
-  const oiFlip = resolveGammaFlip(levelsOiRes?.data, stockPrice ?? 0, null);
-  const volFlip = useAll ? resolveGammaFlip(levelsVolRes?.data, stockPrice ?? 0, null) : null;
   const levels = levelsOiRes?.data
     ? computeGexLevelsFromUw(levelsOiRes.data, stockPrice ?? 0)
     : null;
@@ -956,21 +966,13 @@ export async function fetchGexStudy(
   const spot = stockPrice ?? 0;
   const saneProfileFlip =
     profileFlip != null && spot > 0 && isSaneGammaFlip(profileFlip, spot) ? profileFlip : null;
-  const saneOiFlip =
-    oiFlip != null && spot > 0 && isRelevantGammaFlip(oiFlip, spot) ? oiFlip : null;
-  const saneVolFlip =
-    volFlip != null && spot > 0 && isRelevantGammaFlip(volFlip, spot) ? volFlip : null;
 
-  let gammaFlip = useAll
-    ? pickAllExpiryGammaFlip(
-        saneProfileFlip,
-        saneOiFlip,
-        saneVolFlip,
-        spot,
-        levelsOiRes?.data,
-        levelsVolRes?.data,
-      )
-    : (saneProfileFlip ?? computeGammaFlip(fullSeries, stockPrice));
+  let gammaFlip = resolveChartGammaFlip(
+    saneProfileFlip,
+    spot,
+    levelsOiRes?.data,
+    levelsVolRes?.data,
+  );
 
   if (gammaFlip != null && spot > 0 && !isSaneGammaFlip(gammaFlip, spot)) {
     gammaFlip = null;
