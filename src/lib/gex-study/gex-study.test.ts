@@ -7,6 +7,7 @@ import {
   computeWallsFromSeries,
   filterStrikeWindow,
   hasUsableSpotStrikes,
+  pickAllExpiryGammaFlip,
   pickDeepestSaneFlipBelowSpot,
   rebaseProfileWindow,
   resolveTradingDate,
@@ -182,6 +183,28 @@ describe("pickDeepestSaneFlipBelowSpot", () => {
   it("prefers the deeper flip when UW returns a nearer level", () => {
     const flip = pickDeepestSaneFlipBelowSpot([492.51, 404.27, 464.68], 513.15);
     expect(flip).toBeCloseTo(404.27, 1);
+  });
+
+  it("ignores junk crossings far below spot", () => {
+    const flip = pickDeepestSaneFlipBelowSpot([103.85, 344.28], 348.75);
+    expect(flip).toBeCloseTo(344.28, 1);
+  });
+});
+
+describe("pickAllExpiryGammaFlip", () => {
+  it("uses the ATM profile flip for TSLA instead of a deep junk crossing", () => {
+    const flip = pickAllExpiryGammaFlip(344.28, 103.85, 103.85, 348.75);
+    expect(flip).toBeCloseTo(344.28, 1);
+  });
+
+  it("prefers the deeper UW flip for MSFT when profile is nearer to spot", () => {
+    const flip = pickAllExpiryGammaFlip(492.51, 404.27, 464.68, 513.15);
+    expect(flip).toBeCloseTo(404.27, 1);
+  });
+
+  it("keeps the deeper NVDA flip when both profile and levels are valid", () => {
+    const flip = pickAllExpiryGammaFlip(216.43, 199.77, null, 217.55);
+    expect(flip).toBeCloseTo(199.77, 1);
   });
 });
 
