@@ -360,6 +360,55 @@ select {
   color: var(--ink-soft);
 }
 
+.sleeve-movers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.sleeve-mover {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  color: var(--paper-dim);
+}
+
+.sleeve-mover strong {
+  font-weight: 700;
+  margin-right: 0.2rem;
+}
+
+.sleeve-mover.up {
+  border-color: rgba(255, 90, 31, 0.35);
+  color: #ffb48f;
+}
+
+.sleeve-mover.down {
+  border-color: rgba(243, 235, 227, 0.1);
+  color: #f0a08e;
+}
+
+.sleeve-tickers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.sleeve-ticker {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.18rem 0.4rem;
+  color: var(--paper-dim);
+  background: rgba(243, 235, 227, 0.04);
+}
+
 .stock-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);

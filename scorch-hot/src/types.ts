@@ -24,6 +24,8 @@ export interface SleeveRow {
   rank: number;
   tone: "up" | "down" | "flat";
   spark: number[];
+  names: string[];
+  topMovers: StockRow[];
   stocks: StockRow[];
 }
 
