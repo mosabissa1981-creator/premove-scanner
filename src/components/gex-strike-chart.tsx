@@ -13,12 +13,15 @@ import {
   zoomStrikeViewport,
   type StrikeViewport,
 } from "@/lib/gex-study/gex-chart-viewport";
+import {
+  createBarYScale,
+  createProfileYScale,
+  profileSeriesPoints,
+} from "@/lib/gex-study/gex-chart-scales";
 
 const CHART_WIDTH = 720;
 const CHART_HEIGHT = 380;
 const PAD = { top: 44, right: 82, bottom: 54, left: 82 };
-const BAR_HEIGHT_RATIO = 0.32;
-const PROFILE_SCALE_PADDING = 0.12;
 const AXIS_FONT = 22;
 const LABEL_FONT = 20;
 const VALUE_FONT = 22;
@@ -382,6 +385,10 @@ export function GexStrikeChart({
   }
 
   const visible = strikesInViewport(strikes, viewport);
+  const barSeries = visible.filter(
+    (point) => point.netGex !== 0 || point.callGex !== 0 || point.putGex !== 0,
+  );
+  const profileSeries = profileSeriesPoints(visible);
   const strikeMin = viewport.min;
   const strikeMax = viewport.max;
   const strikeSpan = strikeMax - strikeMin || 1;
@@ -389,31 +396,30 @@ export function GexStrikeChart({
   const plotW = CHART_WIDTH - PAD.left - PAD.right;
   const plotH = CHART_HEIGHT - PAD.top - PAD.bottom;
 
-  const barMax = Math.max(...visible.map((p) => Math.abs(p.netGex)), 1);
-  const profileValues = visible.map((p) => p.profile);
-  const rawProfileMin = Math.min(...profileValues, 0);
-  const rawProfileMax = Math.max(...profileValues, 0);
-  const profileRange = rawProfileMax - rawProfileMin || 1;
-  const profileMin = rawProfileMin - profileRange * PROFILE_SCALE_PADDING;
-  const profileMax = rawProfileMax + profileRange * PROFILE_SCALE_PADDING;
-  const profileSpan = profileMax - profileMin || 1;
+  const leftAxis = createBarYScale(
+    barSeries.map((point) => point.netGex),
+    PAD.top,
+    plotH,
+  );
+  const rightAxis = createProfileYScale(
+    profileSeries.map((point) => point.profile),
+    PAD.top,
+    plotH,
+  );
 
   const xForStrike = (strike: number) =>
     PAD.left + ((strike - strikeMin) / strikeSpan) * plotW;
-  const yForBar = (netGex: number) => {
-    const zeroY = PAD.top + plotH / 2;
-    const half = plotH * BAR_HEIGHT_RATIO;
-    return zeroY - (netGex / barMax) * half;
-  };
-  const yForProfile = (profile: number) =>
-    PAD.top + plotH - ((profile - profileMin) / profileSpan) * plotH;
+  const yForBar = (netGex: number) => leftAxis.toY(netGex);
+  const yForProfile = (profile: number) => rightAxis.toY(profile);
   const profileZeroY = yForProfile(0);
+  const zeroY = leftAxis.zeroY;
 
   const barWidth = Math.max(3, Math.min(14, (plotW / Math.max(visible.length, 1)) * 0.72));
-  const zeroY = PAD.top + plotH / 2;
 
-  const profileLine = visible.map((p) => `${xForStrike(p.strike)},${yForProfile(p.profile)}`).join(" ");
-  const profileFills = buildProfileFillPolygons(visible, xForStrike, yForProfile, profileZeroY);
+  const profileLine = profileSeries
+    .map((point) => `${xForStrike(point.strike)},${yForProfile(point.profile)}`)
+    .join(" ");
+  const profileFills = buildProfileFillPolygons(profileSeries, xForStrike, yForProfile, profileZeroY);
 
   const levels: LevelLine[] = [];
   if (putWall != null && putWall >= strikeMin && putWall <= strikeMax) {
@@ -426,14 +432,8 @@ export function GexStrikeChart({
     levels.push({ value: callWall, label: "Call Wall", color: "#34d399" });
   }
 
-  const yTicks = [-barMax, -barMax / 2, 0, barMax / 2, barMax];
-  const profileAxisTicks = Array.from(
-    new Set(
-      [rawProfileMin, rawProfileMax, ...(rawProfileMin < 0 && rawProfileMax > 0 ? [0] : [])].map((tick) =>
-        Math.round(tick),
-      ),
-    ),
-  ).sort((a, b) => a - b);
+  const yTicks = leftAxis.ticks;
+  const profileAxisTicks = rightAxis.ticks;
   const zoomed = isViewportZoomed(viewport, bounds);
 
   const minLabelSpacing = 56;
@@ -499,114 +499,122 @@ export function GexStrikeChart({
         >
           <rect x={0} y={0} width={CHART_WIDTH} height={CHART_HEIGHT} fill="transparent" />
 
-          <line
-            x1={PAD.left}
-            y1={zeroY}
-            x2={PAD.left + plotW}
-            y2={zeroY}
-            stroke="#3f3f46"
-            strokeDasharray="4 4"
-          />
-
-          {yTicks.map((tick) => {
-            const y = yForBar(tick);
-            return (
-              <g key={`yt-${tick}`}>
-                <line x1={PAD.left} y1={y} x2={PAD.left + plotW} y2={y} stroke="#27272a" />
-                <text x={PAD.left - 10} y={y + 5} textAnchor="end" fill="#d4d4d8" fontSize={AXIS_FONT} fontWeight="600">
-                  {formatAxisMoney(tick)}
-                </text>
-              </g>
-            );
-          })}
-
-          {profileMin < 0 && profileMax > 0 && (
+          <g data-y-axis-id="left" aria-label="Net GEX axis">
             <line
               x1={PAD.left}
-              y1={profileZeroY}
+              y1={zeroY}
               x2={PAD.left + plotW}
-              y2={profileZeroY}
-              stroke="#d4a853"
-              strokeDasharray="3 3"
-              opacity={0.45}
+              y2={zeroY}
+              stroke="#3f3f46"
+              strokeDasharray="4 4"
             />
-          )}
 
-          {profileAxisTicks.map((tick, i) => (
-            <text
-              key={`pr-${i}`}
-              x={CHART_WIDTH - PAD.right + 8}
-              y={yForProfile(tick) + 5}
-              textAnchor="start"
-              fill="#d4a853"
-              fontSize={AXIS_FONT}
-              fontWeight="600"
-            >
-              {formatAxisMoney(tick)}
-            </text>
-          ))}
+            {yTicks.map((tick) => {
+              const y = yForBar(tick);
+              return (
+                <g key={`yt-${tick}`}>
+                  <line x1={PAD.left} y1={y} x2={PAD.left + plotW} y2={y} stroke="#27272a" />
+                  <text x={PAD.left - 10} y={y + 5} textAnchor="end" fill="#d4d4d8" fontSize={AXIS_FONT} fontWeight="600">
+                    {formatAxisMoney(tick)}
+                  </text>
+                </g>
+              );
+            })}
 
-          {profileFills.negative && (
-            <polygon points={profileFills.negative} fill="#f87171" opacity={0.14} stroke="none" />
-          )}
+            {barSeries.map((point) => {
+              const x = xForStrike(point.strike) - barWidth / 2;
+              const y1 = yForBar(point.netGex);
+              const positive = point.netGex >= 0;
+              const selected = tooltip?.point.strike === point.strike;
+              return (
+                <g
+                  key={`bar-${point.strike}`}
+                  onClick={(e) => onBarClick(point, e)}
+                  onMouseEnter={(e) => {
+                    const el = containerRef.current;
+                    if (!el) return;
+                    const rect = el.getBoundingClientRect();
+                    setTooltip({
+                      point,
+                      x: e.clientX - rect.left,
+                      y: e.clientY - rect.top,
+                    });
+                  }}
+                >
+                  <rect
+                    x={x - 2}
+                    y={PAD.top}
+                    width={barWidth + 4}
+                    height={plotH}
+                    fill="transparent"
+                  />
+                  <rect
+                    x={x}
+                    y={Math.min(zeroY, y1)}
+                    width={barWidth}
+                    height={Math.max(1, Math.abs(y1 - zeroY))}
+                    fill={positive ? "#34d399" : "#f87171"}
+                    opacity={selected ? 1 : 0.85}
+                    stroke={selected ? "#f4f4f5" : "none"}
+                    strokeWidth={selected ? 1.5 : 0}
+                  />
+                </g>
+              );
+            })}
+          </g>
 
-          {profileFills.positive && (
-            <polygon points={profileFills.positive} fill="#d4a853" opacity={0.18} stroke="none" />
-          )}
+          <g data-y-axis-id="right" aria-label="Gamma profile axis">
+            <line
+              x1={CHART_WIDTH - PAD.right}
+              y1={PAD.top}
+              x2={CHART_WIDTH - PAD.right}
+              y2={PAD.top + plotH}
+              stroke="#d4a853"
+              opacity={0.35}
+            />
 
-          {visible
-            .filter(
-              (point) =>
-                point.netGex !== 0 || point.callGex !== 0 || point.putGex !== 0,
-            )
-            .map((point) => {
-            const x = xForStrike(point.strike) - barWidth / 2;
-            const y1 = yForBar(point.netGex);
-            const positive = point.netGex >= 0;
-            const selected = tooltip?.point.strike === point.strike;
-            return (
-              <g
-                key={point.strike}
-                onClick={(e) => onBarClick(point, e)}
-                onMouseEnter={(e) => {
-                  const el = containerRef.current;
-                  if (!el) return;
-                  const rect = el.getBoundingClientRect();
-                  setTooltip({
-                    point,
-                    x: e.clientX - rect.left,
-                    y: e.clientY - rect.top,
-                  });
-                }}
+            {rightAxis.domainMin < 0 && rightAxis.domainMax > 0 && (
+              <line
+                x1={PAD.left}
+                y1={profileZeroY}
+                x2={PAD.left + plotW}
+                y2={profileZeroY}
+                stroke="#d4a853"
+                strokeDasharray="3 3"
+                opacity={0.45}
+              />
+            )}
+
+            {profileAxisTicks.map((tick, i) => (
+              <text
+                key={`pr-${i}`}
+                x={CHART_WIDTH - PAD.right + 8}
+                y={yForProfile(tick) + 5}
+                textAnchor="start"
+                fill="#d4a853"
+                fontSize={AXIS_FONT}
+                fontWeight="600"
               >
-                <rect
-                  x={x - 2}
-                  y={PAD.top}
-                  width={barWidth + 4}
-                  height={plotH}
-                  fill="transparent"
-                />
-                <rect
-                  x={x}
-                  y={Math.min(zeroY, y1)}
-                  width={barWidth}
-                  height={Math.max(1, Math.abs(y1 - zeroY))}
-                  fill={positive ? "#34d399" : "#f87171"}
-                  opacity={selected ? 1 : 0.85}
-                  stroke={selected ? "#f4f4f5" : "none"}
-                  strokeWidth={selected ? 1.5 : 0}
-                />
-              </g>
-            );
-          })}
+                {formatAxisMoney(tick)}
+              </text>
+            ))}
 
-          <polyline
-            points={profileLine}
-            fill="none"
-            stroke="#d4a853"
-            strokeWidth={2}
-            strokeLinejoin="round"
-          />
+            {profileFills.negative && (
+              <polygon points={profileFills.negative} fill="#f87171" opacity={0.14} stroke="none" />
+            )}
+
+            {profileFills.positive && (
+              <polygon points={profileFills.positive} fill="#d4a853" opacity={0.18} stroke="none" />
+            )}
+
+            <polyline
+              points={profileLine}
+              fill="none"
+              stroke="#d4a853"
+              strokeWidth={2}
+              strokeLinejoin="round"
+            />
+          </g>
 
           {levels.map((level, index) => {
             const x = xForStrike(level.value);
