@@ -486,7 +486,7 @@ function parseGexLevel(value: string | null | undefined): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
-/** Collect gamma flips from UW levels (primary + nearby). */
+/** Collect OI gamma flips from UW levels (primary + nearby). */
 export function collectRelevantOiFlips(
   levels: UwGexLevels | null | undefined,
   stockPrice: number,
