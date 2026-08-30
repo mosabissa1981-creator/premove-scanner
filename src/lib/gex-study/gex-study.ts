@@ -28,9 +28,10 @@ function latestClose(candles: UwCandle[]): number | null {
 }
 
 function readSpotStrikeGex(row: UwSpotExposureStrikeRow): { callGex: number; putGex: number } {
-  const callGex = parseNum(row.call_gamma_oi ?? (row as UwGreekExposureStrikeRow).call_gex);
-  const putGex = parseNum(row.put_gamma_oi ?? (row as UwGreekExposureStrikeRow).put_gex);
-  return { callGex, putGex };
+  return {
+    callGex: parseNum(row.call_gamma_oi),
+    putGex: parseNum(row.put_gamma_oi),
+  };
 }
 
 export function buildStrikeSeries(
