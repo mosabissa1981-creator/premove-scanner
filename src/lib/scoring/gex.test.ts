@@ -75,6 +75,21 @@ describe("resolveGammaFlip", () => {
     );
     expect(flip).toBeCloseTo(199.77, 1);
   });
+
+  it("rejects junk nearby flips far below spot (TSLA-style)", () => {
+    const flip = resolveGammaFlip(
+      {
+        gamma_flip: "103.85",
+        nearby_flips: ["103.85", "344.28"],
+        call_wall: "400",
+        put_wall: "347.5",
+        gamma_magnet: "340",
+      },
+      348.75,
+      null,
+    );
+    expect(flip).toBeCloseTo(344.28, 1);
+  });
 });
 
 describe("computeGexLevelsFromUw", () => {

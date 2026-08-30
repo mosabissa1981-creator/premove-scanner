@@ -1,5 +1,10 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
-import { computeGexLevelsFromUw, isSaneGammaFlip, resolveGammaFlip } from "@/lib/scoring/gex";
+import {
+  computeGexLevelsFromUw,
+  isRelevantGammaFlip,
+  isSaneGammaFlip,
+  resolveGammaFlip,
+} from "@/lib/scoring/gex";
 import { expiryKey, selectExpiryRows, ymd } from "@/lib/gex-scan/gex-scan";
 import type {
   GexExpiryMode,
@@ -202,8 +207,9 @@ export function rebaseProfileWindow(
   const window = filterStrikeWindow(points, stockPrice);
   let cumulative = 0;
   return window.map((point) => {
+    const profile = cumulative;
     cumulative += point.netGex;
-    return { ...point, profile: cumulative };
+    return { ...point, profile };
   });
 }
 
@@ -290,10 +296,14 @@ export function pickDeepestSaneFlipBelowSpot(
   return Math.min(...sane);
 }
 
-/** Flip must sit in a tradeable band near spot (rejects deep-OTM junk like TSLA ~$104). */
-export function isRelevantGammaFlip(flip: number, stockPrice: number): boolean {
-  if (!isSaneGammaFlip(flip, stockPrice)) return false;
-  return flip >= stockPrice * 0.5;
+export { isRelevantGammaFlip } from "@/lib/scoring/gex";
+
+/** Chart series: ATM window with profile rebased to zero at the left edge. */
+export function prepareChartStrikeSeries(
+  points: GexStrikePoint[],
+  stockPrice: number | null,
+): GexStrikePoint[] {
+  return rebaseProfileWindow(points, stockPrice);
 }
 
 /** All-expiry flip: ATM profile first, deeper UW level when valid, ignore junk crossings. */
@@ -312,7 +322,10 @@ export function pickAllExpiryGammaFlip(
   const levels = relevant(levelsFlip);
   const deep = relevant(deepProfileFlip);
 
-  if (profile && levels) return Math.min(profile, levels);
+  if (profile && levels) {
+    if (profile < stockPrice * 0.75 && levels > profile) return levels;
+    return Math.min(profile, levels);
+  }
   if (profile) return profile;
   if (levels) return levels;
   if (deep) return deep;
@@ -717,7 +730,7 @@ export async function fetchGexStudy(
   const saneProfileFlip =
     profileFlip != null && spot > 0 && isSaneGammaFlip(profileFlip, spot) ? profileFlip : null;
   const saneLevelsFlip =
-    levelsFlip != null && spot > 0 && isSaneGammaFlip(levelsFlip, spot) ? levelsFlip : null;
+    levelsFlip != null && spot > 0 && isRelevantGammaFlip(levelsFlip, spot) ? levelsFlip : null;
   const saneDeepProfileFlip =
     deepProfileFlip != null && spot > 0 && isSaneGammaFlip(deepProfileFlip, spot)
       ? deepProfileFlip
@@ -759,7 +772,7 @@ export async function fetchGexStudy(
     putGex: totals.putGex,
     regime,
     flipDistancePct,
-    strikes: fullSeries,
+    strikes: prepareChartStrikeSeries(fullSeries, stockPrice),
     availableExpiries,
   };
 }

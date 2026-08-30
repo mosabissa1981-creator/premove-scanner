@@ -9,6 +9,7 @@ import {
   hasUsableSpotStrikes,
   pickAllExpiryGammaFlip,
   pickDeepestSaneFlipBelowSpot,
+  prepareChartStrikeSeries,
   rebaseProfileWindow,
   resolveTradingDate,
   summarizeStrikeSeries,
@@ -130,7 +131,7 @@ describe("computeGammaFlipFromWindow", () => {
     const flip = computeGammaFlipFromWindow(series, 217.55);
     expect(flip).not.toBeNull();
     expect(flip!).toBeGreaterThan(190);
-    expect(flip!).toBeLessThan(205);
+    expect(flip!).toBeLessThan(220);
   });
 
   it("ignores deep-OTM chain history by rebasing the profile in-window", () => {
@@ -191,9 +192,40 @@ describe("pickDeepestSaneFlipBelowSpot", () => {
   });
 });
 
+describe("prepareChartStrikeSeries", () => {
+  it("rebases profile inside the ATM window for chart display", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "5", call_gamma_oi: "0", put_gamma_oi: "-1000" },
+      { strike: "10", call_gamma_oi: "5000", put_gamma_oi: "0" },
+      { strike: "150", call_gamma_oi: "100", put_gamma_oi: "-50" },
+      { strike: "180", call_gamma_oi: "50", put_gamma_oi: "-200" },
+      { strike: "195", call_gamma_oi: "20", put_gamma_oi: "-80" },
+      { strike: "200", call_gamma_oi: "300", put_gamma_oi: "-20" },
+      { strike: "210", call_gamma_oi: "400", put_gamma_oi: "0" },
+      { strike: "220", call_gamma_oi: "200", put_gamma_oi: "-10" },
+      { strike: "230", call_gamma_oi: "100", put_gamma_oi: "-5" },
+    ];
+    const series = buildStrikeSeries(rows);
+    const chart = prepareChartStrikeSeries(series, 217.55);
+    expect(chart[0]?.strike).toBeGreaterThanOrEqual(150);
+    expect(chart[0]?.profile).toBe(0);
+    expect(chart[chart.length - 1]?.profile).not.toBe(series[series.length - 1]?.profile);
+  });
+});
+
 describe("pickAllExpiryGammaFlip", () => {
   it("uses the ATM profile flip for TSLA instead of a deep junk crossing", () => {
     const flip = pickAllExpiryGammaFlip(344.28, 103.85, 103.85, 348.75);
+    expect(flip).toBeCloseTo(344.28, 1);
+  });
+
+  it("uses UW levels when profile flip is unavailable", () => {
+    const flip = pickAllExpiryGammaFlip(null, 344.28, null, 348.75);
+    expect(flip).toBeCloseTo(344.28, 1);
+  });
+
+  it("prefers UW levels when profile is a deep outlier on greek fallback data", () => {
+    const flip = pickAllExpiryGammaFlip(230, 344.28, null, 348.75);
     expect(flip).toBeCloseTo(344.28, 1);
   });
 

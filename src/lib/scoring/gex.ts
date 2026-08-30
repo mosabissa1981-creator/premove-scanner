@@ -12,10 +12,16 @@ export function isSaneGammaFlip(flip: number, stockPrice: number): boolean {
   return flip >= stockPrice * 0.25 && flip <= stockPrice * 1.5;
 }
 
+/** Flip must sit in a tradeable band near spot (rejects deep junk like TSLA ~$104). */
+export function isRelevantGammaFlip(flip: number, stockPrice: number): boolean {
+  if (!isSaneGammaFlip(flip, stockPrice)) return false;
+  return flip >= stockPrice * 0.5;
+}
+
 function isUsableFlip(flip: number, stockPrice: number): boolean {
   if (flip <= 0) return false;
   if (stockPrice <= 0) return true;
-  return isSaneGammaFlip(flip, stockPrice);
+  return isRelevantGammaFlip(flip, stockPrice);
 }
 
 /** Prefer the deepest sane UW flip at/below spot (OptionCharts-style), then profile. */
