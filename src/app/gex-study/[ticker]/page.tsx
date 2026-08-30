@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { GexStrikeChart } from "@/components/gex-strike-chart";
+import { TickerSearch } from "@/components/ticker-search";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
 import type { GexExpiryMode, GexStudyResult } from "@/lib/unusualwhales/types";
 
@@ -123,7 +124,14 @@ export default function GexStudyPage({ params }: { params: Promise<{ ticker: str
         </Link>
       )}
 
-      <section>
+      <section className="space-y-4">
+        <TickerSearch
+          destination="gex-study"
+          defaultValue={ticker ?? ""}
+          placeholder="Search ticker for GEX walls (e.g. RKLB)"
+          buttonLabel="Study"
+        />
+
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold">{ticker ?? "…"} GEX Walls</h1>
