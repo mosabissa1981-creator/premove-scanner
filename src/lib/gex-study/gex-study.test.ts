@@ -6,8 +6,10 @@ import {
   computeGammaFlipFromWindow,
   computeWallsFromSeries,
   filterStrikeWindow,
+  hasUsableSpotStrikes,
   pickDeepestSaneFlipBelowSpot,
   rebaseProfileWindow,
+  resolveTradingDate,
   summarizeStrikeSeries,
 } from "@/lib/gex-study/gex-study";
 import type { UwSpotExposureStrikeRow } from "@/lib/unusualwhales/types";
@@ -21,6 +23,36 @@ const rows: UwSpotExposureStrikeRow[] = [
   { strike: "75", call_gamma_oi: "200000", put_gamma_oi: "-5000" },
   { strike: "80", call_gamma_oi: "180000", put_gamma_oi: "-15000" },
 ];
+
+describe("hasUsableSpotStrikes", () => {
+  it("rejects rows without strike or gamma values", () => {
+    expect(
+      hasUsableSpotStrikes([
+        { strike: "0", call_gamma_oi: "0", put_gamma_oi: "0" },
+        { strike: "200", call_gamma_oi: "0", put_gamma_oi: "0" },
+      ]),
+    ).toBe(false);
+    expect(
+      hasUsableSpotStrikes([
+        { strike: "200", call_gamma_oi: "100", put_gamma_oi: "-50" },
+        { strike: "210", call_gamma_oi: "80", put_gamma_oi: "-20" },
+        { strike: "220", call_gamma_oi: "60", put_gamma_oi: "-10" },
+        { strike: "230", call_gamma_oi: "40", put_gamma_oi: "-5" },
+      ]),
+    ).toBe(true);
+  });
+});
+
+describe("resolveTradingDate", () => {
+  it("uses the OHLC session date when available", () => {
+    expect(
+      resolveTradingDate(
+        [{ open: "100", high: "100", low: "100", close: "100", date: "2026-08-29" }],
+        new Date("2026-08-30T12:00:00Z"),
+      ),
+    ).toBe("2026-08-29");
+  });
+});
 
 describe("buildStrikeSeries", () => {
   it("sorts strikes and builds cumulative profile", () => {
