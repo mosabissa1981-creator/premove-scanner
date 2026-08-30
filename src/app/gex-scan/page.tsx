@@ -61,7 +61,14 @@ function rowBackground(row: GexScanRow): string {
   return "";
 }
 
-function GexScanResults({ rows }: { rows: GexScanRow[] }) {
+function studyHref(ticker: string, expiry?: string): string {
+  if (expiry && expiry !== "all" && /^\d{4}-\d{2}-\d{2}/.test(expiry)) {
+    return `/gex-study/${ticker}?expiry=${encodeURIComponent(expiry.slice(0, 10))}`;
+  }
+  return `/gex-study/${ticker}`;
+}
+
+function GexScanResults({ rows, expiryMode }: { rows: GexScanRow[]; expiryMode: GexExpiryMode }) {
   return (
     <>
       <div className="space-y-2 sm:hidden">
@@ -69,9 +76,10 @@ function GexScanResults({ rows }: { rows: GexScanRow[] }) {
           const badge = flipBadge(row);
           const { callHeavy } = gexSides(row);
           return (
-            <article
+            <Link
               key={row.ticker}
-              className={`rounded-xl border border-zinc-800 p-3 ${rowBackground(row)}`}
+              href={studyHref(row.ticker, row.expiry !== expiryMode ? row.expiry : undefined)}
+              className={`block rounded-xl border border-zinc-800 p-3 transition hover:border-emerald-500/40 ${rowBackground(row)}`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
@@ -109,7 +117,10 @@ function GexScanResults({ rows }: { rows: GexScanRow[] }) {
                   <div className={`font-bold ${callHeavy ? "text-emerald-400" : "text-red-400"}`}>{row.ratio}</div>
                 </div>
               </div>
-            </article>
+              <p className="mt-2 text-[10px] font-medium uppercase tracking-wide text-emerald-400/80">
+                Study walls →
+              </p>
+            </Link>
           );
         })}
       </div>
@@ -132,8 +143,18 @@ function GexScanResults({ rows }: { rows: GexScanRow[] }) {
               const { callHeavy } = gexSides(row);
               const badge = flipBadge(row);
               return (
-                <tr key={row.ticker} className={`border-b border-zinc-800/80 ${rowBackground(row)}`}>
-                  <td className="px-3 py-3 font-semibold">{row.ticker}</td>
+                <tr
+                  key={row.ticker}
+                  className={`border-b border-zinc-800/80 ${rowBackground(row)}`}
+                >
+                  <td className="px-3 py-3 font-semibold">
+                    <Link
+                      href={studyHref(row.ticker, row.expiry !== expiryMode ? row.expiry : undefined)}
+                      className="text-emerald-400 hover:underline"
+                    >
+                      {row.ticker}
+                    </Link>
+                  </td>
                   <td className="px-3 py-3">
                     <span
                       className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge.className}`}
@@ -388,7 +409,7 @@ export default function GexScanPage() {
                 : "No tickers at that Call:Put ratio."}
             </p>
           ) : (
-            <GexScanResults rows={visible} />
+            <GexScanResults rows={visible} expiryMode={result.expiryMode} />
           )}
 
           {result.errors.length > 0 && (
