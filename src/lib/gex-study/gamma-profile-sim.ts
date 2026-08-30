@@ -177,30 +177,9 @@ export function simulateRawNetGexProfile(
   return points;
 }
 
-function interpolateSeriesAtSpot(
-  points: { simulatedSpot: number }[],
-  values: number[],
-  spot: number,
-): number {
-  if (!points.length) return 0;
-  if (spot <= points[0].simulatedSpot) return values[0];
-  const last = points.length - 1;
-  if (spot >= points[last].simulatedSpot) return values[last];
-
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1];
-    const curr = points[i];
-    if (spot < prev.simulatedSpot || spot > curr.simulatedSpot) continue;
-    const span = curr.simulatedSpot - prev.simulatedSpot;
-    if (span === 0) return values[i];
-    const ratio = (spot - prev.simulatedSpot) / span;
-    return values[i - 1] + ratio * (values[i] - values[i - 1]);
-  }
-
-  return values[last];
-}
-
-/** Step 2: deepest rising zero crossing of raw Net GEX below spot. */
+import {
+  rebaseProfileAtFlip,
+} from "@/utils/gamma-math";
 export function gammaFlipFromRawProfile(
   raw: RawSimulatedPoint[],
   stockPrice: number,
@@ -253,19 +232,10 @@ export function buildRebaseAtFlipFromValues(
   rawValues: number[],
   gammaFlip: number,
 ): SimulatedProfilePoint[] {
-  const n = spots.length;
-  if (!n || !Number.isFinite(gammaFlip)) return [];
-
-  const rawAtFlip = interpolateSeriesAtSpot(
-    spots.map((simulatedSpot) => ({ simulatedSpot })),
-    rawValues,
-    gammaFlip,
-  );
-
-  return spots.map((simulatedSpot, i) => ({
-    simulatedSpot,
-    profile: (rawValues[i] ?? 0) - rawAtFlip,
-    rawNetGex: rawValues[i],
+  return rebaseProfileAtFlip(spots, rawValues, gammaFlip).map((point) => ({
+    simulatedSpot: point.x,
+    profile: point.profile,
+    rawNetGex: point.rawValue,
   }));
 }
 

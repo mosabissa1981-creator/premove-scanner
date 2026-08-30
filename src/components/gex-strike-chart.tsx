@@ -17,7 +17,13 @@ import {
   createBarYScale,
   createProfileYScale,
   profileSeriesPoints,
-} from "@/lib/gex-study/gex-chart-scales";
+} from "@/utils/chart-domain";
+import {
+  buildProfileFillPolygons,
+  formatChartMoney,
+  GEX_CHART_AXIS,
+  GEX_CHART_THEME,
+} from "@/lib/gex-study/gex-chart-ui";
 
 const CHART_WIDTH = 720;
 const CHART_HEIGHT = 380;
@@ -27,21 +33,6 @@ const LABEL_FONT = 20;
 const VALUE_FONT = 22;
 const TAP_THRESHOLD_PX = 10;
 
-/** Top-of-chart level labels (neutral); lines/badges keep semantic colors. */
-const LEVEL_LABEL_COLOR = "#a1a1aa";
-const PROFILE_FILL_NEGATIVE = "#fee2e2";
-const PROFILE_FILL_POSITIVE = "#dcfce7";
-const PROFILE_FILL_OPACITY = 0.45;
-
-function formatAxisMoney(value: number, signed = false): string {
-  const abs = Math.abs(value);
-  const sign = value < 0 ? "-" : signed && value > 0 ? "+" : "";
-  if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(2)}M`;
-  if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(2)}K`;
-  return `${sign}$${abs.toFixed(0)}`;
-}
-
 function formatStrike(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
@@ -50,54 +41,6 @@ interface LevelLine {
   value: number;
   label: string;
   color: string;
-}
-
-function buildProfileFillPolygons(
-  points: GexStrikePoint[],
-  xForStrike: (strike: number) => number,
-  yForProfile: (profile: number) => number,
-  zeroY: number,
-): { negative: string[]; positive: string[] } {
-  if (points.length < 2) return { negative: [], positive: [] };
-
-  const negative: string[] = [];
-  const positive: string[] = [];
-
-  const addQuad = (x1: number, y1: number, x2: number, y2: number, bucket: string[]) => {
-    bucket.push(`${x1},${y1} ${x2},${y2} ${x2},${zeroY} ${x1},${zeroY}`);
-  };
-
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1];
-    const curr = points[i];
-    const x0 = xForStrike(prev.strike);
-    const x1 = xForStrike(curr.strike);
-    const y0 = yForProfile(prev.profile);
-    const y1 = yForProfile(curr.profile);
-
-    if (prev.profile <= 0 && curr.profile <= 0) {
-      addQuad(x0, y0, x1, y1, negative);
-      continue;
-    }
-    if (prev.profile >= 0 && curr.profile >= 0) {
-      addQuad(x0, y0, x1, y1, positive);
-      continue;
-    }
-
-    const span = curr.profile - prev.profile;
-    const ratio = span === 0 ? 0 : -prev.profile / span;
-    const xc = x0 + ratio * (x1 - x0);
-
-    if (prev.profile < 0) {
-      addQuad(x0, y0, xc, zeroY, negative);
-      addQuad(xc, zeroY, x1, y1, positive);
-    } else {
-      addQuad(x0, y0, xc, zeroY, positive);
-      addQuad(xc, zeroY, x1, y1, negative);
-    }
-  }
-
-  return { negative, positive };
 }
 
 interface BottomLabel {
@@ -425,13 +368,13 @@ export function GexStrikeChart({
 
   const levels: LevelLine[] = [];
   if (putWall != null && putWall >= strikeMin && putWall <= strikeMax) {
-    levels.push({ value: putWall, label: "Put Wall", color: "#f87171" });
+    levels.push({ value: putWall, label: "Put Wall", color: GEX_CHART_THEME.levelColors.putWall });
   }
   if (gammaFlip != null && gammaFlip >= strikeMin && gammaFlip <= strikeMax) {
-    levels.push({ value: gammaFlip, label: "Gamma Flip", color: "#d4a853" });
+    levels.push({ value: gammaFlip, label: "Gamma Flip", color: GEX_CHART_THEME.levelColors.gammaFlip });
   }
   if (callWall != null && callWall >= strikeMin && callWall <= strikeMax) {
-    levels.push({ value: callWall, label: "Call Wall", color: "#34d399" });
+    levels.push({ value: callWall, label: "Call Wall", color: GEX_CHART_THEME.levelColors.callWall });
   }
 
   const yTicks = leftAxis.ticks;
@@ -501,7 +444,7 @@ export function GexStrikeChart({
         >
           <rect x={0} y={0} width={CHART_WIDTH} height={CHART_HEIGHT} fill="transparent" />
 
-          <g data-y-axis-id="left" aria-label="Net GEX axis">
+          <g data-y-axis-id={GEX_CHART_AXIS.left} aria-label="Net GEX axis">
             <line
               x1={PAD.left}
               y1={zeroY}
@@ -517,7 +460,7 @@ export function GexStrikeChart({
                 <g key={`yt-${tick}`}>
                   <line x1={PAD.left} y1={y} x2={PAD.left + plotW} y2={y} stroke="#27272a" />
                   <text x={PAD.left - 10} y={y + 5} textAnchor="end" fill="#d4d4d8" fontSize={AXIS_FONT} fontWeight="600">
-                    {formatAxisMoney(tick)}
+                    {formatChartMoney(tick)}
                   </text>
                 </g>
               );
@@ -555,7 +498,7 @@ export function GexStrikeChart({
                     y={Math.min(zeroY, y1)}
                     width={barWidth}
                     height={Math.max(1, Math.abs(y1 - zeroY))}
-                    fill={positive ? "#34d399" : "#f87171"}
+                    fill={positive ? GEX_CHART_THEME.barPositive : GEX_CHART_THEME.barNegative}
                     opacity={selected ? 1 : 0.85}
                     stroke={selected ? "#f4f4f5" : "none"}
                     strokeWidth={selected ? 1.5 : 0}
@@ -565,13 +508,13 @@ export function GexStrikeChart({
             })}
           </g>
 
-          <g data-y-axis-id="right" aria-label="Gamma profile axis">
+          <g data-y-axis-id={GEX_CHART_AXIS.right} aria-label="Gamma profile axis">
             <line
               x1={CHART_WIDTH - PAD.right}
               y1={PAD.top}
               x2={CHART_WIDTH - PAD.right}
               y2={PAD.top + plotH}
-              stroke="#d4a853"
+              stroke={GEX_CHART_THEME.profileAxisColor}
               opacity={0.35}
             />
 
@@ -581,11 +524,11 @@ export function GexStrikeChart({
                 x={CHART_WIDTH - PAD.right + 8}
                 y={yForProfile(tick) + 5}
                 textAnchor="start"
-                fill="#d4a853"
+                fill={GEX_CHART_THEME.profileAxisColor}
                 fontSize={AXIS_FONT}
                 fontWeight="600"
               >
-                {formatAxisMoney(tick)}
+                {formatChartMoney(tick)}
               </text>
             ))}
 
@@ -593,8 +536,8 @@ export function GexStrikeChart({
               <polygon
                 key={`profile-fill-neg-${index}`}
                 points={points}
-                fill={PROFILE_FILL_NEGATIVE}
-                opacity={PROFILE_FILL_OPACITY}
+                fill={GEX_CHART_THEME.profileFillNegative}
+                opacity={GEX_CHART_THEME.profileFillOpacity}
                 stroke="none"
               />
             ))}
@@ -603,8 +546,8 @@ export function GexStrikeChart({
               <polygon
                 key={`profile-fill-pos-${index}`}
                 points={points}
-                fill={PROFILE_FILL_POSITIVE}
-                opacity={PROFILE_FILL_OPACITY}
+                fill={GEX_CHART_THEME.profileFillPositive}
+                opacity={GEX_CHART_THEME.profileFillOpacity}
                 stroke="none"
               />
             ))}
@@ -612,7 +555,7 @@ export function GexStrikeChart({
             <polyline
               points={profileLine}
               fill="none"
-              stroke="#d4a853"
+              stroke={GEX_CHART_THEME.profileLineColor}
               strokeWidth={2}
               strokeLinejoin="round"
             />
@@ -636,7 +579,7 @@ export function GexStrikeChart({
                   x={x}
                   y={PAD.top - 12 + labelOffset}
                   textAnchor="middle"
-                  fill={LEVEL_LABEL_COLOR}
+                  fill={GEX_CHART_THEME.levelLabelColor}
                   fontSize={LABEL_FONT}
                   fontWeight="700"
                 >
@@ -722,10 +665,10 @@ export function GexStrikeChart({
           >
             <div className="text-lg font-bold text-zinc-100">Strike: {formatStrike(tooltip.point.strike)}</div>
             <div className={`mt-1.5 text-base font-semibold ${tooltip.point.netGex >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-              Net GEX: {formatAxisMoney(tooltip.point.netGex, true)}
+              Net GEX: {formatChartMoney(tooltip.point.netGex, true)}
             </div>
             <div className="mt-1 text-base font-semibold text-amber-300">
-              Gamma Profile: {formatAxisMoney(tooltip.point.profile, true)}
+              Gamma Profile: {formatChartMoney(tooltip.point.profile, true)}
             </div>
           </div>
         )}
