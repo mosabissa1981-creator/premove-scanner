@@ -1,13 +1,14 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
 import {
-  buildRebaseAtFlipProfile,
   dedupeChainLegs,
   gammaFlipFromRawProfile,
   mergeSimulatedProfileOntoBars,
-  simulateGammaProfile,
   simulateRawNetGexProfile,
   type OptionChainLeg,
 } from "@/lib/gex-study/gamma-profile-sim";
+import {
+  buildProfileAtFlip,
+} from "@/utils/gamma-math";
 import {
   computeGexLevelsFromUw,
   isRelevantGammaFlip,
@@ -422,10 +423,16 @@ export function buildCumulativeProfileAtFlip(
   if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
 
   const sorted = [...(profileSource ?? points)].sort((a, b) => a.strike - b.strike);
-  const fullCumulative = buildCumulativeProfile(sorted);
-  const atFlip = interpolateProfileAtStrike(fullCumulative, gammaFlip) ?? 0;
-  const profileAt = (strike: number) =>
-    (interpolateProfileAtStrike(fullCumulative, strike) ?? 0) - atFlip;
+  const rebased = buildProfileAtFlip(
+    sorted.map((point) => point.strike),
+    sorted.map((point) => point.netGex),
+    gammaFlip,
+  );
+  const rebasedSeries = sorted.map((point, index) => ({
+    ...point,
+    profile: rebased[index]?.profile ?? 0,
+  }));
+  const profileAt = (strike: number) => interpolateProfileAtStrike(rebasedSeries, strike) ?? 0;
 
   const windowStrikes = new Set(window.map((point) => point.strike));
   const chart = points
@@ -459,19 +466,16 @@ export function buildFlipAnchoredProfile(
   if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
 
   const sorted = [...window].sort((a, b) => a.strike - b.strike);
-  const profiled = sorted.map((point) => {
-    let profile = 0;
-    if (point.strike >= gammaFlip) {
-      for (const row of sorted) {
-        if (row.strike > gammaFlip && row.strike <= point.strike) profile += row.netGex;
-      }
-    } else {
-      for (const row of sorted) {
-        if (row.strike >= point.strike && row.strike < gammaFlip) profile += row.netGex;
-      }
-    }
-    return { ...point, profile };
-  });
+  const rebased = buildProfileAtFlip(
+    sorted.map((point) => point.strike),
+    sorted.map((point) => point.netGex),
+    gammaFlip,
+  );
+  const profileByStrike = new Map(rebased.map((point) => [point.x, point.profile]));
+  const profiled = sorted.map((point) => ({
+    ...point,
+    profile: profileByStrike.get(point.strike) ?? 0,
+  }));
 
   const hasFlipStrike = profiled.some((point) => Math.abs(point.strike - gammaFlip) < 1e-6);
   if (hasFlipStrike) return profiled;
@@ -1152,17 +1156,9 @@ function buildBarRebasedProfile(
   bars: GexStrikePoint[],
   stockPrice: number | null,
   gammaFlip: number | null,
+  profileSource?: GexStrikePoint[],
 ): GexStrikePoint[] {
-  const windowed = filterStrikeWindow(bars, stockPrice);
-  if (!windowed.length) return [];
-  if (gammaFlip == null) return rebaseProfileWindow(bars, stockPrice);
-
-  const raw = windowed.map((bar) => ({
-    simulatedSpot: bar.strike,
-    rawNetGex: bar.netGex,
-  }));
-  const profile = buildRebaseAtFlipProfile(raw, gammaFlip);
-  return mergeSimulatedProfileOntoBars(windowed, profile, gammaFlip);
+  return buildCumulativeProfileAtFlip(bars, stockPrice, gammaFlip, profileSource ?? bars);
 }
 
 function buildSimulatedChartStrikes(
@@ -1171,6 +1167,7 @@ function buildSimulatedChartStrikes(
   stockPrice: number,
   tradingDate: string,
   gammaFlip: number | null,
+  profileSource: GexStrikePoint[],
 ): { strikes: GexStrikePoint[]; simulatedFlip: number | null; usedSimulation: boolean } {
   const raw = simulateRawNetGexProfile(legs, stockPrice, {
     asOfDate: tradingDate,
@@ -1179,23 +1176,38 @@ function buildSimulatedChartStrikes(
   if (!raw.length) return { strikes: bars, simulatedFlip: null, usedSimulation: false };
 
   const simulatedFlip = gammaFlipFromRawProfile(raw, stockPrice);
-  const anchorFlip = simulatedFlip ?? gammaFlip;
+  const anchorFlip = gammaFlip ?? simulatedFlip;
   if (anchorFlip == null) return { strikes: bars, simulatedFlip, usedSimulation: false };
-
-  const profile = simulateGammaProfile(legs, stockPrice, {
-    asOfDate: tradingDate,
-    steps: 250,
-    gammaFlip: anchorFlip,
-  });
 
   const windowed = filterStrikeWindow(bars, stockPrice);
   if (!windowed.length) return { strikes: bars, simulatedFlip, usedSimulation: false };
 
+  const bidirectional = buildProfileAtFlip(
+    profileSource.map((point) => point.strike),
+    profileSource.map((point) => point.netGex),
+    anchorFlip,
+  );
+
   const minStrike = windowed[0].strike;
   const maxStrike = windowed[windowed.length - 1].strike;
-  const windowProfile = profile.filter(
-    (point) => point.simulatedSpot >= minStrike && point.simulatedSpot <= maxStrike,
-  );
+  const windowProfile = raw
+    .filter((point) => point.simulatedSpot >= minStrike && point.simulatedSpot <= maxStrike)
+    .map((point) => ({
+      simulatedSpot: point.simulatedSpot,
+      profile:
+        interpolateProfileAtStrike(
+          bidirectional.map((row) => ({
+            strike: row.x,
+            callGex: 0,
+            putGex: 0,
+            netGex: 0,
+            profile: row.profile,
+          })),
+          point.simulatedSpot,
+        ) ?? 0,
+      rawNetGex: point.rawNetGex,
+    }));
+
   const strikes = mergeSimulatedProfileOntoBars(windowed, windowProfile, anchorFlip);
   return { strikes, simulatedFlip, usedSimulation: true };
 }
@@ -1335,6 +1347,7 @@ export async function fetchGexStudy(
       stockPrice,
       tradingDate,
       gammaFlip,
+      profileStrikeSeries,
     );
     chartStrikes = simulated.strikes;
     simulatedFlip = simulated.simulatedFlip ?? simulatedFlip;
@@ -1375,7 +1388,7 @@ export async function fetchGexStudy(
     regime,
     flipDistancePct,
     strikes:
-      chartStrikes ?? buildBarRebasedProfile(fullSeries, stockPrice, gammaFlip),
+      chartStrikes ?? buildBarRebasedProfile(fullSeries, stockPrice, gammaFlip, profileStrikeSeries),
     availableExpiries,
     profileSource,
     chainLegCount: chainLegs.filter((leg) => leg.oi > 0).length,

@@ -178,7 +178,8 @@ export function simulateRawNetGexProfile(
 }
 
 import {
-  rebaseProfileAtFlip,
+  buildProfileAtFlip,
+  buildProfileAtFlipFromIsolated,
 } from "@/utils/gamma-math";
 export function gammaFlipFromRawProfile(
   raw: RawSimulatedPoint[],
@@ -219,20 +220,27 @@ export function flipIndexForPrice(raw: RawSimulatedPoint[], gammaFlip: number): 
 }
 
 /**
- * Rebase-at-flip profile: subtract isolated net GEX at the flip from every point.
- *
- * OptionCharts treats each x-axis point as total market GEX at that hypothetical spot
- * (not a running sum of dollar values). Rebasing guarantees profile = $0 at flip.
- *
- * Equivalent to forward/backward cumulative of spot-to-spot *deltas*, not summing
- * the raw totals themselves (which would stack $183M bars into a $1B cliff).
+ * Bidirectional profile from localized per-strike net GEX.
  */
 export function buildRebaseAtFlipFromValues(
   spots: number[],
   rawValues: number[],
   gammaFlip: number,
 ): SimulatedProfilePoint[] {
-  return rebaseProfileAtFlip(spots, rawValues, gammaFlip).map((point) => ({
+  return buildProfileAtFlip(spots, rawValues, gammaFlip).map((point) => ({
+    simulatedSpot: point.x,
+    profile: point.profile,
+    rawNetGex: point.rawValue,
+  }));
+}
+
+/** Isolated BS totals at each simulated spot (rebase-at-flip). */
+export function buildIsolatedProfileAtFlip(
+  spots: number[],
+  rawValues: number[],
+  gammaFlip: number,
+): SimulatedProfilePoint[] {
+  return buildProfileAtFlipFromIsolated(spots, rawValues, gammaFlip).map((point) => ({
     simulatedSpot: point.x,
     profile: point.profile,
     rawNetGex: point.rawValue,
@@ -246,7 +254,7 @@ export function buildRebaseAtFlipProfile(
   const sorted = [...raw].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
   if (!sorted.length || !Number.isFinite(gammaFlip)) return [];
 
-  return buildRebaseAtFlipFromValues(
+  return buildIsolatedProfileAtFlip(
     sorted.map((point) => point.simulatedSpot),
     sorted.map((point) => point.rawNetGex),
     gammaFlip,
