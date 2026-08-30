@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
 import { filterAndSortGexRows, gexSides, tierClass } from "@/lib/gex-scan/gex-scan";
-import type { GexExpiryMode, GexScanResult } from "@/lib/unusualwhales/types";
+import type { GexExpiryMode, GexScanResult, GexScanRow } from "@/lib/unusualwhales/types";
 
 const STORAGE_KEY = "premove_gex_tickers";
 const DEFAULT_TICKERS = "NVDA AAPL TSLA AMD META SPY QQQ IWM MSFT AMZN";
@@ -22,6 +22,23 @@ function formatMoney(value: number | null | undefined): string {
 
 function cls(value: number): string {
   return value >= 0 ? "text-emerald-400" : "text-red-400";
+}
+
+function formatPrice(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(Number(value))) return "—";
+  return `$${Number(value).toFixed(2)}`;
+}
+
+function regimeLabel(regime: GexScanRow["regime"]): string {
+  if (regime === "positive") return "+γ";
+  if (regime === "negative") return "−γ";
+  return "—";
+}
+
+function regimeClass(regime: GexScanRow["regime"]): string {
+  if (regime === "positive") return "text-emerald-400";
+  if (regime === "negative") return "text-red-400";
+  return "text-zinc-500";
 }
 
 export default function GexScanPage() {
@@ -108,8 +125,8 @@ export default function GexScanPage() {
       <section>
         <h1 className="text-xl font-bold">GEX Scan</h1>
         <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-          Call : Put gamma exposure ratio scanner. Green = more call GEX, red = more put GEX.
-          Powered by Unusual Whales — no OptionCharts cookies or proxies.
+          Call : Put gamma exposure ratio scanner with gamma flip levels. Green = more call GEX,
+          red = more put GEX. +γ = price above flip (positive gamma regime).
         </p>
       </section>
 
@@ -222,16 +239,17 @@ export default function GexScanPage() {
             </p>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-zinc-800">
-              <table className="w-full min-w-[720px] border-collapse text-sm tabular-nums">
+              <table className="w-full min-w-[860px] border-collapse text-sm tabular-nums">
                 <thead>
                   <tr className="border-b border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500">
                     <th className="px-3 py-3">Symbol</th>
+                    <th className="px-3 py-3">Gamma flip</th>
                     <th className="px-3 py-3 text-right">Call GEX</th>
                     <th className="px-3 py-3 text-right">Put GEX</th>
-                    <th className="px-3 py-3 text-right">Net GEX</th>
+                    <th className="hidden px-3 py-3 text-right sm:table-cell">Net GEX</th>
                     <th className="px-3 py-3">Call : Put</th>
-                    <th className="px-3 py-3">Dom</th>
-                    <th className="px-3 py-3">Walls</th>
+                    <th className="hidden px-3 py-3 sm:table-cell">Dom</th>
+                    <th className="hidden px-3 py-3 md:table-cell">Walls</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -255,19 +273,28 @@ export default function GexScanPage() {
                     return (
                       <tr key={row.ticker} className={`border-b border-zinc-800/80 ${rowBg}`}>
                         <td className="px-3 py-3 font-semibold">{row.ticker}</td>
+                        <td className="px-3 py-3">
+                          <div className="font-medium">{formatPrice(row.gammaFlip)}</div>
+                          <div className={`text-xs ${regimeClass(row.regime)}`}>
+                            {regimeLabel(row.regime)}
+                            {row.flipDistancePct != null
+                              ? ` · ${row.flipDistancePct >= 0 ? "+" : ""}${row.flipDistancePct.toFixed(1)}%`
+                              : ""}
+                          </div>
+                        </td>
                         <td className={`px-3 py-3 text-right ${cls(row.callGex)}`}>
                           {formatMoney(row.callGex)}
                         </td>
                         <td className={`px-3 py-3 text-right ${cls(row.putGex)}`}>
                           {formatMoney(row.putGex)}
                         </td>
-                        <td className={`px-3 py-3 text-right ${cls(row.netGex)}`}>
+                        <td className={`hidden px-3 py-3 text-right sm:table-cell ${cls(row.netGex)}`}>
                           {formatMoney(row.netGex)}
                         </td>
                         <td className={`px-3 py-3 font-bold ${callHeavy ? "text-emerald-400" : "text-red-400"}`}>
                           {row.ratio}
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="hidden px-3 py-3 sm:table-cell">
                           <span
                             className={`rounded-full px-2 py-0.5 text-xs font-bold ${
                               row.dominant === "CALL"
@@ -278,7 +305,7 @@ export default function GexScanPage() {
                             {row.dominant}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-zinc-400">
+                        <td className="hidden px-3 py-3 text-zinc-400 md:table-cell">
                           {row.callWall ?? "—"} / {row.putWall ?? "—"}
                         </td>
                       </tr>

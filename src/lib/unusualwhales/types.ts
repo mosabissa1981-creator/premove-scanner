@@ -102,6 +102,11 @@ export interface GexScanRow {
   dominant: "CALL" | "PUT";
   callWall: number | null;
   putWall: number | null;
+  gammaFlip: number | null;
+  gammaMagnet: number | null;
+  stockPrice: number | null;
+  regime: "positive" | "negative" | "neutral";
+  flipDistancePct: number | null;
   ratio: string;
   imbalance: number;
   error?: string;

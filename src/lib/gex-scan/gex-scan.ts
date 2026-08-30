@@ -1,7 +1,9 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
+import { computeGexLevelsFromUw } from "@/lib/scoring/gex";
 import type {
   GexExpiryMode,
   GexScanRow,
+  UwCandle,
   UwDataResponse,
   UwGexLevels,
   UwGreekExposureExpiryRow,
@@ -185,22 +187,31 @@ function parseWall(value: string | null | undefined): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+function latestClose(candles: UwCandle[]): number | null {
+  const last = candles[candles.length - 1];
+  if (!last?.close) return null;
+  const n = parseFloat(last.close);
+  return Number.isNaN(n) ? null : n;
+}
+
 export async function fetchGexForTicker(
   client: UnusualWhalesClient,
   ticker: string,
   expiryMode: GexExpiryMode,
 ): Promise<GexScanRow> {
-  const [exposureRes, levelsRes] = await Promise.all([
+  const [exposureRes, levelsRes, ohlcRes] = await Promise.all([
     client.greekExposureByExpiry(ticker) as Promise<UwDataResponse<UwGreekExposureExpiryRow[]>>,
     client.gexLevels(ticker, "oi") as Promise<UwDataResponse<UwGexLevels>>,
+    client.ohlc(ticker, "1d", 1) as Promise<UwDataResponse<UwCandle[]>>,
   ]);
 
   const rows = exposureRes.data ?? [];
   const selected = selectExpiryRows(rows, expiryMode);
   const { callGex, putGex, netGex, expiry } = aggregateGex(selected);
-  const levels = levelsRes.data;
-  const callWall = parseWall(levels?.call_wall);
-  const putWall = parseWall(levels?.put_wall);
+  const stockPrice = latestClose(ohlcRes.data ?? []);
+  const gex = levelsRes.data
+    ? computeGexLevelsFromUw(levelsRes.data, stockPrice ?? 0)
+    : null;
   const dominant = Math.abs(callGex) >= Math.abs(putGex) ? "CALL" : "PUT";
 
   return {
@@ -211,8 +222,13 @@ export async function fetchGexForTicker(
     putGex,
     netGex,
     dominant,
-    callWall,
-    putWall,
+    callWall: gex?.callWall ?? parseWall(levelsRes.data?.call_wall),
+    putWall: gex?.putWall ?? parseWall(levelsRes.data?.put_wall),
+    gammaFlip: gex?.gammaFlip ?? null,
+    gammaMagnet: gex?.gammaMagnet ?? null,
+    stockPrice,
+    regime: gex?.regime ?? "neutral",
+    flipDistancePct: gex?.flipDistancePct ?? null,
     ratio: ratioLabel({ callGex, putGex }),
     imbalance: gexSides({ callGex, putGex }).imbalance,
   };
@@ -249,6 +265,11 @@ export async function runGexScan(
         dominant: "CALL",
         callWall: null,
         putWall: null,
+        gammaFlip: null,
+        gammaMagnet: null,
+        stockPrice: null,
+        regime: "neutral",
+        flipDistancePct: null,
         ratio: "—",
         imbalance: 1,
         error: message,
