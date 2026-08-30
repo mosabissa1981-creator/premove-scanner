@@ -23,7 +23,25 @@ describe("createBarYScale", () => {
 });
 
 describe("createProfileYScale", () => {
-  it("maps profile extrema to the full plot height", () => {
+  it("uses a symmetric domain centered on zero", () => {
+    const profiles = [-391.8e6, 0, 1_291.7e6];
+    const scale = createProfileYScale(profiles, PLOT_TOP, PLOT_HEIGHT);
+    const maxAbs = 1_291.7e6;
+
+    expect(scale.domainMin).toBeCloseTo(-maxAbs * (1 + 0.12), -3);
+    expect(scale.domainMax).toBeCloseTo(maxAbs * (1 + 0.12), -3);
+    expect(Math.abs(scale.domainMin)).toBeCloseTo(Math.abs(scale.domainMax), -3);
+  });
+
+  it("places zero on the same vertical center as the bar axis", () => {
+    const barScale = createBarYScale([183.6e6], PLOT_TOP, PLOT_HEIGHT);
+    const profileScale = createProfileYScale([-391.8e6, 0, 1_291.7e6], PLOT_TOP, PLOT_HEIGHT);
+
+    expect(profileScale.toY(0)).toBeCloseTo(barScale.zeroY, 4);
+    expect(profileScale.toY(0)).toBeCloseTo(PLOT_TOP + PLOT_HEIGHT / 2, 4);
+  });
+
+  it("maps symmetric domain extrema to the full plot height", () => {
     const profiles = [-391.8e6, 0, 1_291.7e6];
     const scale = createProfileYScale(profiles, PLOT_TOP, PLOT_HEIGHT);
 
@@ -39,12 +57,6 @@ describe("createProfileYScale", () => {
     const profilePeakY = profileScale.toY(1_291.7e6);
 
     expect(profilePeakY).toBeLessThan(barPeakY - 20);
-  });
-
-  it("uses only profile values for the domain", () => {
-    const scale = createProfileYScale([100e6, 500e6, 900e6], PLOT_TOP, PLOT_HEIGHT);
-    expect(scale.domainMin).toBeLessThan(100e6);
-    expect(scale.domainMax).toBeGreaterThan(900e6);
   });
 });
 

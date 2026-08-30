@@ -34,14 +34,15 @@ function profileAxisTicks(rawMin: number, rawMax: number): number[] {
   return [...ticks].sort((a, b) => a - b);
 }
 
-/** Right axis: gamma profile line only (full plot height, independent domain). */
+/** Right axis: gamma profile line only (symmetric domain so $0 aligns with left axis). */
 export function createProfileYScale(
   profileValues: number[],
   plotTop: number,
   plotHeight: number,
 ): YAxisScale {
+  const zeroY = plotTop + plotHeight / 2;
+
   if (!profileValues.length) {
-    const zeroY = plotTop + plotHeight / 2;
     return {
       domainMin: -1,
       domainMax: 1,
@@ -52,16 +53,17 @@ export function createProfileYScale(
 
   const rawMin = Math.min(...profileValues);
   const rawMax = Math.max(...profileValues);
-  const range = rawMax - rawMin || 1;
-  const domainMin = rawMin - range * PROFILE_SCALE_PADDING;
-  const domainMax = rawMax + range * PROFILE_SCALE_PADDING;
-  const span = domainMax - domainMin || 1;
+  const maxAbsProfile = Math.max(Math.abs(rawMin), Math.abs(rawMax), 1);
+  const paddedMax = maxAbsProfile * (1 + PROFILE_SCALE_PADDING);
+  const domainMin = -paddedMax;
+  const domainMax = paddedMax;
+  const span = domainMax - domainMin;
 
   return {
     domainMin,
     domainMax,
     toY: (profile: number) => plotTop + plotHeight - ((profile - domainMin) / span) * plotHeight,
-    ticks: profileAxisTicks(rawMin, rawMax),
+    ticks: profileAxisTicks(-maxAbsProfile, maxAbsProfile),
   };
 }
 
