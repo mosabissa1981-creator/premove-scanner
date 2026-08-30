@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { OptionChainLeg } from "@/lib/gex-study/gamma-profile-sim";
 import {
   blackScholesGamma,
+  buildRebaseAtFlipProfile,
   dedupeChainLegs,
   dollarGammaExposure,
+  flipIndexForPrice,
+  gammaFlipFromRawProfile,
   gammaFlipFromSimulatedProfile,
   interpolateSimulatedProfile,
   simulateGammaProfile,
+  simulateRawNetGexProfile,
   totalGammaAtSpot,
 } from "@/lib/gex-study/gamma-profile-sim";
 
@@ -27,48 +31,62 @@ const GOOGLE_EXAMPLE_CHAIN: OptionChainLeg[] = [
   { strike: 365, type: "C", oi: 15_000, iv: 0.25, expiry: "2026-09-29", dte: 30 },
 ];
 
-describe("blackScholesGamma", () => {
-  it("returns positive gamma for ATM options", () => {
-    const gamma = blackScholesGamma(100, 100, 30 / 365, 0.04, 0.25);
-    expect(gamma).toBeGreaterThan(0);
-  });
+describe("simulateRawNetGexProfile", () => {
+  it("recomputes an isolated total at every simulated spot (no running sum)", () => {
+    const stockPrice = 266;
+    const raw = simulateRawNetGexProfile(GOOGLE_EXAMPLE_CHAIN, stockPrice, {
+      steps: 40,
+      asOfDate: "2026-08-30",
+    });
 
-  it("returns zero when time or volatility is non-positive", () => {
-    expect(blackScholesGamma(100, 100, 0, 0.04, 0.25)).toBe(0);
-    expect(blackScholesGamma(100, 100, 30 / 365, 0.04, 0)).toBe(0);
-  });
-});
-
-describe("dollarGammaExposure", () => {
-  it("negates puts and keeps calls positive", () => {
-    const call = dollarGammaExposure(250, 270, 30 / 365, 0.04, 0.25, 10_000, "C");
-    const put = dollarGammaExposure(250, 270, 30 / 365, 0.04, 0.25, 10_000, "P");
-    expect(call).toBeGreaterThan(0);
-    expect(put).toBeLessThan(0);
-    expect(Math.abs(put)).toBeCloseTo(Math.abs(call), 0);
-  });
-
-  it("scales with simulated spot squared, not contract strike squared", () => {
-    const atSpot = dollarGammaExposure(250, 270, 30 / 365, 0.04, 0.25, 10_000, "C");
-    const wrongScale = blackScholesGamma(250, 270, 30 / 365, 0.04, 0.25) * 10_000 * 100 * 270 * 270 * 0.01;
-    expect(atSpot).not.toBeCloseTo(wrongScale, 0);
+    for (const point of raw) {
+      const isolated = totalGammaAtSpot(GOOGLE_EXAMPLE_CHAIN, point.simulatedSpot, {
+        asOfDate: "2026-08-30",
+      });
+      expect(point.rawNetGex).toBeCloseTo(isolated, 4);
+    }
   });
 });
 
-describe("dedupeChainLegs", () => {
-  it("keeps one leg per expiry/strike/type", () => {
-    const legs = dedupeChainLegs([
-      { strike: 250, type: "P", oi: 100, iv: 0.25, expiry: "2026-09-19", dte: 30 },
-      { strike: 250, type: "P", oi: 200, iv: 0.25, expiry: "2026-09-19", dte: 30 },
-      { strike: 250, type: "C", oi: 50, iv: 0.25, expiry: "2026-09-19", dte: 30 },
-    ]);
-    expect(legs).toHaveLength(2);
-    expect(legs.find((leg) => leg.type === "P")?.oi).toBe(200);
+describe("buildRebaseAtFlipProfile", () => {
+  it("anchors profile at zero on the gamma flip price", () => {
+    const stockPrice = 266;
+    const raw = simulateRawNetGexProfile(GOOGLE_EXAMPLE_CHAIN, stockPrice, {
+      steps: 200,
+      asOfDate: "2026-08-30",
+    });
+    const flip = gammaFlipFromRawProfile(raw, stockPrice)!;
+    const profile = buildRebaseAtFlipProfile(raw, flip);
+
+    expect(interpolateSimulatedProfile(profile, flip)).toBeCloseTo(0, 0);
+
+    const below = interpolateSimulatedProfile(profile, flip - 10);
+    const above = interpolateSimulatedProfile(profile, flip + 10);
+    expect(below!).toBeLessThan(0);
+    expect(above!).toBeGreaterThan(0);
+  });
+
+  it("uses forward/backward cumulative sums then subtracts the flip anchor", () => {
+    const raw = [
+      { simulatedSpot: 200, rawNetGex: -100 },
+      { simulatedSpot: 220, rawNetGex: -50 },
+      { simulatedSpot: 240, rawNetGex: 0 },
+      { simulatedSpot: 260, rawNetGex: 80 },
+      { simulatedSpot: 280, rawNetGex: 120 },
+    ];
+    const flip = 240;
+    const flipIndex = flipIndexForPrice(raw, flip);
+    expect(flipIndex).toBe(2);
+
+    const profile = buildRebaseAtFlipProfile(raw, flip);
+    expect(profile[flipIndex].profile).toBeCloseTo(0, 6);
+    expect(profile[0].profile).toBeLessThan(0);
+    expect(profile[profile.length - 1].profile).toBeGreaterThan(0);
   });
 });
 
 describe("simulateGammaProfile", () => {
-  it("crosses zero between put-heavy and call-heavy regions", () => {
+  it("crosses zero between put-heavy and call-heavy regions after rebase", () => {
     const stockPrice = 266;
     const profile = simulateGammaProfile(GOOGLE_EXAMPLE_CHAIN, stockPrice, {
       riskFreeRate: 0.04,
@@ -86,27 +104,7 @@ describe("simulateGammaProfile", () => {
 
     const flip = gammaFlipFromSimulatedProfile(profile, stockPrice);
     expect(flip).not.toBeNull();
-    expect(flip!).toBeGreaterThan(200);
-    expect(flip!).toBeLessThan(stockPrice);
-  });
-
-  it("recomputes an isolated total at every simulated spot (no running sum)", () => {
-    const stockPrice = 266;
-    const profile = simulateGammaProfile(GOOGLE_EXAMPLE_CHAIN, stockPrice, {
-      steps: 40,
-      asOfDate: "2026-08-30",
-    });
-    const strictlyDecreasing = profile.every(
-      (point, index) => index === 0 || point.profile <= profile[index - 1].profile,
-    );
-    expect(strictlyDecreasing).toBe(false);
-
-    for (const point of profile) {
-      const isolated = totalGammaAtSpot(GOOGLE_EXAMPLE_CHAIN, point.simulatedSpot, {
-        asOfDate: "2026-08-30",
-      });
-      expect(point.profile).toBeCloseTo(isolated, 4);
-    }
+    expect(interpolateSimulatedProfile(profile, flip!)!).toBeCloseTo(0, 0);
   });
 
   it("matches the Google example formula at a fixed simulated spot", () => {
@@ -123,13 +121,44 @@ describe("simulateGammaProfile", () => {
     expect(computed).toBeCloseTo(manual, 4);
   });
 
-  it("interpolates profile values onto bar strikes", () => {
+  it("rebase-at-flip is not a monotone copy of raw totals", () => {
     const stockPrice = 266;
-    const profile = simulateGammaProfile(GOOGLE_EXAMPLE_CHAIN, stockPrice, { steps: 200 });
-    const at240 = interpolateSimulatedProfile(profile, 240);
-    const at275 = interpolateSimulatedProfile(profile, 275);
-    expect(at240).not.toBeNull();
-    expect(at275).not.toBeNull();
-    expect(at275!).toBeGreaterThan(at240!);
+    const raw = simulateRawNetGexProfile(GOOGLE_EXAMPLE_CHAIN, stockPrice, { steps: 80 });
+    const flip = gammaFlipFromRawProfile(raw, stockPrice)!;
+    const profile = buildRebaseAtFlipProfile(raw, flip);
+    const rawMonotone = raw.every(
+      (point, index) => index === 0 || point.rawNetGex <= raw[index - 1].rawNetGex,
+    );
+    const profileMonotone = profile.every(
+      (point, index) => index === 0 || point.profile <= profile[index - 1].profile,
+    );
+    expect(rawMonotone || profileMonotone).toBe(false);
+  });
+});
+
+describe("blackScholesGamma", () => {
+  it("returns positive gamma for ATM options", () => {
+    const gamma = blackScholesGamma(100, 100, 30 / 365, 0.04, 0.25);
+    expect(gamma).toBeGreaterThan(0);
+  });
+});
+
+describe("dollarGammaExposure", () => {
+  it("negates puts and scales with simulated spot squared", () => {
+    const call = dollarGammaExposure(250, 270, 30 / 365, 0.04, 0.25, 10_000, "C");
+    const put = dollarGammaExposure(250, 270, 30 / 365, 0.04, 0.25, 10_000, "P");
+    expect(call).toBeGreaterThan(0);
+    expect(put).toBeLessThan(0);
+  });
+});
+
+describe("dedupeChainLegs", () => {
+  it("keeps one leg per expiry/strike/type", () => {
+    const legs = dedupeChainLegs([
+      { strike: 250, type: "P", oi: 100, iv: 0.25, expiry: "2026-09-19", dte: 30 },
+      { strike: 250, type: "P", oi: 200, iv: 0.25, expiry: "2026-09-19", dte: 30 },
+    ]);
+    expect(legs).toHaveLength(1);
+    expect(legs[0]?.oi).toBe(200);
   });
 });

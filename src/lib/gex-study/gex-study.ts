@@ -1,9 +1,10 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
 import {
   dedupeChainLegs,
-  gammaFlipFromSimulatedProfile,
+  gammaFlipFromRawProfile,
   mergeSimulatedProfileOntoBars,
   simulateGammaProfile,
+  simulateRawNetGexProfile,
   type OptionChainLeg,
 } from "@/lib/gex-study/gamma-profile-sim";
 import {
@@ -1035,14 +1036,24 @@ function buildSimulatedChartStrikes(
   legs: OptionChainLeg[],
   stockPrice: number,
   tradingDate: string,
+  gammaFlip: number | null,
 ): { strikes: GexStrikePoint[]; simulatedFlip: number | null } {
-  const profile = simulateGammaProfile(legs, stockPrice, {
+  const raw = simulateRawNetGexProfile(legs, stockPrice, {
     asOfDate: tradingDate,
     steps: 250,
   });
-  if (!profile.length) return { strikes: bars, simulatedFlip: null };
+  if (!raw.length) return { strikes: bars, simulatedFlip: null };
 
-  const simulatedFlip = gammaFlipFromSimulatedProfile(profile, stockPrice);
+  const simulatedFlip = gammaFlipFromRawProfile(raw, stockPrice);
+  const anchorFlip = gammaFlip ?? simulatedFlip;
+  if (anchorFlip == null) return { strikes: bars, simulatedFlip };
+
+  const profile = simulateGammaProfile(legs, stockPrice, {
+    asOfDate: tradingDate,
+    steps: 250,
+    gammaFlip: anchorFlip,
+  });
+
   const windowed = filterStrikeWindow(bars, stockPrice);
   if (!windowed.length) return { strikes: bars, simulatedFlip };
 
@@ -1051,7 +1062,7 @@ function buildSimulatedChartStrikes(
   const windowProfile = profile.filter(
     (point) => point.simulatedSpot >= minStrike && point.simulatedSpot <= maxStrike,
   );
-  const strikes = mergeSimulatedProfileOntoBars(windowed, windowProfile);
+  const strikes = mergeSimulatedProfileOntoBars(windowed, windowProfile, anchorFlip);
   return { strikes, simulatedFlip };
 }
 
@@ -1142,11 +1153,9 @@ export async function fetchGexStudy(
     computeGammaFlipFromWindow(profileSource, stockPrice);
 
   let simulatedFlip: number | null = null;
-  let chartStrikes: GexStrikePoint[] | null = null;
   if (chainLegs.length >= 8 && stockPrice != null && stockPrice > 0) {
-    const simulated = buildSimulatedChartStrikes(fullSeries, chainLegs, stockPrice, tradingDate);
-    simulatedFlip = simulated.simulatedFlip;
-    chartStrikes = simulated.strikes;
+    const raw = simulateRawNetGexProfile(chainLegs, stockPrice, { asOfDate: tradingDate });
+    simulatedFlip = gammaFlipFromRawProfile(raw, stockPrice);
   }
 
   const profileFlip = simulatedFlip ?? profileFlipFromBars;
@@ -1170,6 +1179,19 @@ export async function fetchGexStudy(
 
   if (gammaFlip != null && spot > 0 && !isSaneGammaFlip(gammaFlip, spot)) {
     gammaFlip = null;
+  }
+
+  let chartStrikes: GexStrikePoint[] | null = null;
+  if (chainLegs.length >= 8 && stockPrice != null && stockPrice > 0) {
+    const simulated = buildSimulatedChartStrikes(
+      fullSeries,
+      chainLegs,
+      stockPrice,
+      tradingDate,
+      gammaFlip,
+    );
+    chartStrikes = simulated.strikes;
+    simulatedFlip = simulated.simulatedFlip ?? simulatedFlip;
   }
 
   if (!useAll) {
