@@ -315,6 +315,7 @@ export function GexStrikeChart({
   };
   const yForProfile = (profile: number) =>
     PAD.top + plotH - ((profile - profileMin) / profileSpan) * plotH;
+  const profileZeroY = yForProfile(0);
 
   const barWidth = Math.max(3, Math.min(14, (plotW / Math.max(visible.length, 1)) * 0.72));
   const zeroY = PAD.top + plotH / 2;
@@ -399,6 +400,18 @@ export function GexStrikeChart({
               </g>
             );
           })}
+
+          {profileMin < 0 && profileMax > 0 && (
+            <line
+              x1={PAD.left}
+              y1={profileZeroY}
+              x2={PAD.left + plotW}
+              y2={profileZeroY}
+              stroke="#d4a853"
+              strokeDasharray="3 3"
+              opacity={0.45}
+            />
+          )}
 
           {profileTicks.map((tick, i) => (
             <text
