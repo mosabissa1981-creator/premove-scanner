@@ -3,6 +3,7 @@ import {
   buildBidirectionalProfileAtFlip,
   buildProfileAtFlip,
   buildProfileAtFlipFromIsolated,
+  rebaseProfileAtFlip,
 } from "@/utils/gamma-math";
 
 describe("buildBidirectionalProfileAtFlip", () => {
@@ -18,7 +19,7 @@ describe("buildBidirectionalProfileAtFlip", () => {
     expect(profile[5]).toBeGreaterThan(profile[3]!);
   });
 
-  it("matches strike-range profile when flip lands on a strike", () => {
+  it("matches flip-shifted profile when flip lands on a strike", () => {
     const xs = [330, 340, 350, 360];
     const localized = [-100, -50, 200, 100];
     const ranged = buildProfileAtFlip(xs, localized, 350);
@@ -89,5 +90,24 @@ describe("buildProfileAtFlipFromIsolated", () => {
     expect(at265).toBeCloseTo(183_000_000, -3);
     expect(at270).toBeCloseTo(103_000_000, -3);
     expect(at270).toBeLessThan(500_000_000);
+  });
+});
+
+describe("rebaseProfileAtFlip", () => {
+  it("delegates to isolated-total rebase for backward compatibility", () => {
+    const rebased = rebaseProfileAtFlip(
+      [240, 248.42, 265, 270],
+      [-20_000_000, 0, 183_000_000, 103_000_000],
+      248.42,
+    );
+    const isolated = buildProfileAtFlipFromIsolated(
+      [240, 248.42, 265, 270],
+      [-20_000_000, 0, 183_000_000, 103_000_000],
+      248.42,
+    );
+    for (const point of rebased) {
+      const match = isolated.find((row) => row.x === point.x);
+      expect(point.profile).toBeCloseTo(match?.profile ?? 0, 6);
+    }
   });
 });

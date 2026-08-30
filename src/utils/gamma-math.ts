@@ -2,9 +2,8 @@
  * OptionCharts-style gamma profile math shared across API + chart layers.
  *
  * Bidirectional sweep: anchor profile at $0 on gamma flip, accumulate localized
- * net GEX left and right. For flips between strikes, sum strike ranges from the
- * flip price (not a single array index). Isolated BS simulation totals rebase via
- * subtraction at the flip spot.
+ * net GEX left and right from the flip index. Isolated BS simulation totals
+ * rebase via subtraction at the flip spot.
  */
 
 export interface RebasedProfilePoint {

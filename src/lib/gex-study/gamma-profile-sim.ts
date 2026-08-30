@@ -234,7 +234,7 @@ export function buildRebaseAtFlipFromValues(
   }));
 }
 
-/** Isolated BS totals at each simulated spot (delta sweep = rebase-at-flip). */
+/** Isolated BS totals at each simulated spot (rebase-at-flip). */
 export function buildIsolatedProfileAtFlip(
   spots: number[],
   rawValues: number[],
