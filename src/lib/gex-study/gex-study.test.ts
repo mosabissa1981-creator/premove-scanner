@@ -5,9 +5,11 @@ import {
   computeGammaFlip,
   computeGammaFlipDeep,
   computeGammaFlipFromWindow,
+  computeNetGexBarFlip,
   computeWallsFromSeries,
   filterStrikeWindow,
   hasUsableSpotStrikes,
+  interpolateProfileAtStrike,
   pickAllExpiryGammaFlip,
   pickDeepestSaneFlipBelowSpot,
   prepareChartStrikeSeries,
@@ -212,7 +214,43 @@ describe("buildFlipAnchoredProfile", () => {
   });
 });
 
+describe("computeNetGexBarFlip", () => {
+  it("finds the strike where bars change from red to green", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "240", call_gamma_oi: "0", put_gamma_oi: "-100" },
+      { strike: "250", call_gamma_oi: "0", put_gamma_oi: "-50" },
+      { strike: "255", call_gamma_oi: "0", put_gamma_oi: "-20" },
+      { strike: "260", call_gamma_oi: "100", put_gamma_oi: "0" },
+      { strike: "270", call_gamma_oi: "150", put_gamma_oi: "0" },
+    ];
+    const series = buildStrikeSeries(rows, 266);
+    const flip = computeNetGexBarFlip(series, 266);
+    expect(flip).toBeGreaterThan(255);
+    expect(flip).toBeLessThan(260);
+  });
+});
+
 describe("prepareChartStrikeSeries", () => {
+  it("anchors profile zero at the red-to-green bar transition", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "240", call_gamma_oi: "0", put_gamma_oi: "-100" },
+      { strike: "250", call_gamma_oi: "0", put_gamma_oi: "-50" },
+      { strike: "255", call_gamma_oi: "0", put_gamma_oi: "-20" },
+      { strike: "260", call_gamma_oi: "100", put_gamma_oi: "0" },
+      { strike: "270", call_gamma_oi: "150", put_gamma_oi: "0" },
+      { strike: "280", call_gamma_oi: "80", put_gamma_oi: "0" },
+    ];
+    const series = buildStrikeSeries(rows, 266);
+    const chart = prepareChartStrikeSeries(series, 266, 256.2, "spot");
+    const barFlip = computeNetGexBarFlip(series, 266)!;
+    const atFlip = interpolateProfileAtStrike(chart, barFlip);
+    const below = interpolateProfileAtStrike(chart, 250);
+    const above = interpolateProfileAtStrike(chart, 270);
+    expect(atFlip).toBeCloseTo(0, 0);
+    expect(below).toBeLessThan(0);
+    expect(above).toBeGreaterThan(0);
+  });
+
   it("uses flip-anchored profile when cumulative data does not cross at the flip", () => {
     const rows: UwSpotExposureStrikeRow[] = [
       { strike: "330", call_gamma_oi: "0", put_gamma_oi: "-100" },
@@ -226,27 +264,25 @@ describe("prepareChartStrikeSeries", () => {
     const above = chart.find((point) => point.strike === 360);
     expect(below?.profile).toBeLessThan(0);
     expect(above?.profile).toBeGreaterThan(0);
-    const anchor = chart.find((point) => Math.abs(point.strike - 345) < 1e-6);
-    expect(anchor?.profile).toBe(0);
+    const barFlip = computeNetGexBarFlip(series, 355)!;
+    expect(interpolateProfileAtStrike(chart, barFlip)).toBeCloseTo(0, 0);
   });
 
-  it("rebases profile inside the ATM window for chart display", () => {
+  it("rebases profile when no bar transition exists in the window", () => {
     const rows: UwSpotExposureStrikeRow[] = [
-      { strike: "5", call_gamma_oi: "0", put_gamma_oi: "-1000" },
-      { strike: "10", call_gamma_oi: "5000", put_gamma_oi: "0" },
       { strike: "150", call_gamma_oi: "100", put_gamma_oi: "-50" },
       { strike: "180", call_gamma_oi: "50", put_gamma_oi: "-200" },
       { strike: "195", call_gamma_oi: "20", put_gamma_oi: "-80" },
-      { strike: "200", call_gamma_oi: "300", put_gamma_oi: "-20" },
-      { strike: "210", call_gamma_oi: "400", put_gamma_oi: "0" },
-      { strike: "220", call_gamma_oi: "200", put_gamma_oi: "-10" },
-      { strike: "230", call_gamma_oi: "100", put_gamma_oi: "-5" },
+      { strike: "200", call_gamma_oi: "-30", put_gamma_oi: "-20" },
+      { strike: "210", call_gamma_oi: "-40", put_gamma_oi: "0" },
+      { strike: "220", call_gamma_oi: "-20", put_gamma_oi: "-10" },
+      { strike: "230", call_gamma_oi: "-10", put_gamma_oi: "-5" },
     ];
     const series = buildStrikeSeries(rows);
     const chart = prepareChartStrikeSeries(series, 217.55);
     expect(chart[0]?.strike).toBeGreaterThanOrEqual(150);
     expect(chart[0]?.profile).toBe(0);
-    expect(chart[chart.length - 1]?.profile).not.toBe(series[series.length - 1]?.profile);
+    expect(computeNetGexBarFlip(series, 217.55)).toBeNull();
   });
 });
 
