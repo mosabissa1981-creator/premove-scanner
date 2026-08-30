@@ -90,6 +90,39 @@ export interface UwGreekExposureExpiryRow {
   date?: string;
 }
 
+export interface UwGreekExposureStrikeRow {
+  strike: string;
+  call_gex: string;
+  put_gex: string;
+  expiry?: string;
+}
+
+export interface GexStrikePoint {
+  strike: number;
+  callGex: number;
+  putGex: number;
+  netGex: number;
+  profile: number;
+}
+
+export interface GexStudyResult {
+  ticker: string;
+  expiry: string;
+  scannedAt: string;
+  stockPrice: number | null;
+  callWall: number | null;
+  putWall: number | null;
+  gammaFlip: number | null;
+  gammaMagnet: number | null;
+  netGex: number;
+  callGex: number;
+  putGex: number;
+  regime: "positive" | "negative" | "neutral";
+  flipDistancePct: number | null;
+  strikes: GexStrikePoint[];
+  availableExpiries: { expiry: string; dte: number }[];
+}
+
 export type GexExpiryMode = "daily" | "weekly" | "monthly" | "all";
 
 export interface GexScanRow {

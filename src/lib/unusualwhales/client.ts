@@ -179,6 +179,14 @@ export class UnusualWhalesClient {
     return this.get(`/api/stock/${ticker}/greek-exposure/expiry`, {}, 120_000);
   }
 
+  greekExposureByStrike(ticker: string) {
+    return this.get(`/api/stock/${ticker}/greek-exposure/strike`, {}, 120_000);
+  }
+
+  greekExposureByStrikeExpiry(ticker: string, expiry: string) {
+    return this.get(`/api/stock/${ticker}/greek-exposure/strike-expiry`, { expiry }, 120_000);
+  }
+
   darkpool(ticker: string, days = 5) {
     const newerThan = new Date();
     newerThan.setDate(newerThan.getDate() - days);

@@ -75,7 +75,7 @@ export function parseTickers(text: string): string[] {
   return out;
 }
 
-function expiryKey(row: UwGreekExposureExpiryRow): string {
+export function expiryKey(row: UwGreekExposureExpiryRow): string {
   return String(row.expiry || "").slice(0, 10);
 }
 
