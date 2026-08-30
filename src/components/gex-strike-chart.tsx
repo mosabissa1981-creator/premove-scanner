@@ -17,7 +17,8 @@ import {
 const CHART_WIDTH = 720;
 const CHART_HEIGHT = 380;
 const PAD = { top: 44, right: 82, bottom: 54, left: 82 };
-const BAR_HEIGHT_RATIO = 0.48;
+const BAR_HEIGHT_RATIO = 0.4;
+const PROFILE_SCALE_PADDING = 0.12;
 const AXIS_FONT = 22;
 const LABEL_FONT = 20;
 const VALUE_FONT = 22;
@@ -390,8 +391,11 @@ export function GexStrikeChart({
 
   const barMax = Math.max(...visible.map((p) => Math.abs(p.netGex)), 1);
   const profileValues = visible.map((p) => p.profile);
-  const profileMin = Math.min(...profileValues, 0);
-  const profileMax = Math.max(...profileValues, 0);
+  const rawProfileMin = Math.min(...profileValues, 0);
+  const rawProfileMax = Math.max(...profileValues, 0);
+  const profileRange = rawProfileMax - rawProfileMin || 1;
+  const profileMin = rawProfileMin - profileRange * PROFILE_SCALE_PADDING;
+  const profileMax = rawProfileMax + profileRange * PROFILE_SCALE_PADDING;
   const profileSpan = profileMax - profileMin || 1;
 
   const xForStrike = (strike: number) =>
@@ -423,7 +427,13 @@ export function GexStrikeChart({
   }
 
   const yTicks = [-barMax, -barMax / 2, 0, barMax / 2, barMax];
-  const profileTicks = [profileMin, profileMax];
+  const profileAxisTicks = Array.from(
+    new Set(
+      [rawProfileMin, rawProfileMax, ...(rawProfileMin < 0 && rawProfileMax > 0 ? [0] : [])].map((tick) =>
+        Math.round(tick),
+      ),
+    ),
+  ).sort((a, b) => a - b);
   const zoomed = isViewportZoomed(viewport, bounds);
 
   const minLabelSpacing = 56;
@@ -522,7 +532,7 @@ export function GexStrikeChart({
             />
           )}
 
-          {profileTicks.map((tick, i) => (
+          {profileAxisTicks.map((tick, i) => (
             <text
               key={`pr-${i}`}
               x={CHART_WIDTH - PAD.right + 8}

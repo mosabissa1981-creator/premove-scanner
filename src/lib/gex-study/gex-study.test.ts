@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCumulativeProfileAtFlip,
   buildFlipAnchoredProfile,
   buildStrikeSeries,
   computeGammaFlip,
@@ -192,6 +193,25 @@ describe("pickDeepestSaneFlipBelowSpot", () => {
   it("ignores junk crossings far below spot", () => {
     const flip = pickDeepestSaneFlipBelowSpot([103.85, 344.28], 348.75);
     expect(flip).toBeCloseTo(344.28, 1);
+  });
+});
+
+describe("buildCumulativeProfileAtFlip", () => {
+  it("rebases cumulative bar volume to zero at gamma flip", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "250", call_gamma_oi: "0", put_gamma_oi: "-50" },
+      { strike: "255", call_gamma_oi: "0", put_gamma_oi: "-20" },
+      { strike: "260", call_gamma_oi: "100", put_gamma_oi: "0" },
+      { strike: "270", call_gamma_oi: "150", put_gamma_oi: "0" },
+    ];
+    const series = buildStrikeSeries(rows, 266);
+    const chart = buildCumulativeProfileAtFlip(series, 266, 257);
+    expect(interpolateProfileAtStrike(chart, 257)).toBeCloseTo(0, 0);
+    expect(interpolateProfileAtStrike(chart, 250)!).toBeLessThan(0);
+    expect(interpolateProfileAtStrike(chart, 270)!).toBeGreaterThan(0);
+    expect(interpolateProfileAtStrike(chart, 270)!).toBeGreaterThan(
+      interpolateProfileAtStrike(chart, 260)!,
+    );
   });
 });
 
