@@ -66,7 +66,7 @@ describe("buildRebaseAtFlipProfile", () => {
     expect(above!).toBeGreaterThan(0);
   });
 
-  it("uses forward/backward cumulative sums then subtracts the flip anchor", () => {
+  it("uses forward/backward running sums on raw values then subtracts flip anchor", () => {
     const raw = [
       { simulatedSpot: 200, rawNetGex: -100 },
       { simulatedSpot: 220, rawNetGex: -50 },
@@ -79,9 +79,12 @@ describe("buildRebaseAtFlipProfile", () => {
     expect(flipIndex).toBe(2);
 
     const profile = buildRebaseAtFlipProfile(raw, flip);
-    expect(profile[flipIndex].profile).toBeCloseTo(0, 6);
+    expect(interpolateSimulatedProfile(profile, flip)).toBeCloseTo(0, 6);
     expect(profile[0].profile).toBeLessThan(0);
     expect(profile[profile.length - 1].profile).toBeGreaterThan(0);
+
+    // Forward: 260 = 0 + 80, 280 = 80 + 120 = 200 (before anchor subtraction)
+    expect(profile[3].profile).toBeGreaterThan(profile[2].profile);
   });
 });
 

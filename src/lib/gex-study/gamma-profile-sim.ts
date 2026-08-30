@@ -236,11 +236,50 @@ export function flipIndexForPrice(raw: RawSimulatedPoint[], gammaFlip: number): 
 }
 
 /**
- * Steps 4–5: cumulative profile rebased to $0 at the gamma flip.
- * - After flip index: forward running sum of spot-to-spot deltas
- * - Before flip index: backward running sum from flip
- * - Subtract interpolated cumulative value at the exact flip price
+ * Steps 4–5: OptionCharts rebase-at-flip cumulative profile.
+ *
+ * 1. `rawValues[i]` = isolated net GEX at spot/strike i (not a running sum).
+ * 2. Forward from flip index:  cum[i] = cum[i-1] + raw[i]
+ * 3. Backward from flip index: cum[i] = cum[i+1] + raw[i]  (accumulates negative below flip)
+ * 4. Subtract interpolated cum at the exact gamma flip → profile crosses $0 at flip.
  */
+export function buildRebaseAtFlipFromValues(
+  spots: number[],
+  rawValues: number[],
+  gammaFlip: number,
+): SimulatedProfilePoint[] {
+  const n = spots.length;
+  if (!n || !Number.isFinite(gammaFlip)) return [];
+
+  let flipIndex = 0;
+  for (let i = 0; i < n; i++) {
+    if (spots[i] <= gammaFlip) flipIndex = i;
+  }
+
+  const cumulative = new Array<number>(n).fill(0);
+  cumulative[flipIndex] = rawValues[flipIndex] ?? 0;
+
+  for (let i = flipIndex + 1; i < n; i++) {
+    cumulative[i] = cumulative[i - 1] + (rawValues[i] ?? 0);
+  }
+
+  for (let i = flipIndex - 1; i >= 0; i--) {
+    cumulative[i] = cumulative[i + 1] + (rawValues[i] ?? 0);
+  }
+
+  const anchor = interpolateSeriesAtSpot(
+    spots.map((simulatedSpot) => ({ simulatedSpot })),
+    cumulative,
+    gammaFlip,
+  );
+
+  return spots.map((simulatedSpot, i) => ({
+    simulatedSpot,
+    profile: cumulative[i] - anchor,
+    rawNetGex: rawValues[i],
+  }));
+}
+
 export function buildRebaseAtFlipProfile(
   raw: RawSimulatedPoint[],
   gammaFlip: number,
@@ -248,27 +287,11 @@ export function buildRebaseAtFlipProfile(
   const sorted = [...raw].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
   if (!sorted.length || !Number.isFinite(gammaFlip)) return [];
 
-  const flipIndex = flipIndexForPrice(sorted, gammaFlip);
-  const increments = sorted.map((point, i) =>
-    i === 0 ? 0 : point.rawNetGex - sorted[i - 1].rawNetGex,
+  return buildRebaseAtFlipFromValues(
+    sorted.map((point) => point.simulatedSpot),
+    sorted.map((point) => point.rawNetGex),
+    gammaFlip,
   );
-
-  const cumulative = new Array(sorted.length).fill(0);
-
-  for (let i = flipIndex + 1; i < sorted.length; i++) {
-    cumulative[i] = cumulative[i - 1] + increments[i];
-  }
-
-  for (let i = flipIndex - 1; i >= 0; i--) {
-    cumulative[i] = cumulative[i + 1] - increments[i + 1];
-  }
-
-  const anchor = interpolateSeriesAtSpot(sorted, cumulative, gammaFlip);
-  return sorted.map((point, i) => ({
-    simulatedSpot: point.simulatedSpot,
-    profile: cumulative[i] - anchor,
-    rawNetGex: point.rawNetGex,
-  }));
 }
 
 /** Full OptionCharts profile: raw BS net GEX → cumulative rebase at flip. */
