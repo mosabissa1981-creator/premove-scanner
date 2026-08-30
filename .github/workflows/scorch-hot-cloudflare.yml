@@ -34,5 +34,5 @@ jobs:
       - name: Validate wrangler bundle
         working-directory: scorch-hot
         run: |
-          npx wrangler deploy --dry-run
-          npx wrangler versions upload --dry-run
+          npm run deploy -- --dry-run
+          npm run upload -- --dry-run

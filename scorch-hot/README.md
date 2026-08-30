@@ -49,26 +49,25 @@ npm run deploy
 
 ### Connect GitHub (recommended)
 
-**Option A — standalone repo (preferred)**
+Cloudflare Dashboard → **Workers & Pages** → **scorch-hot-sectors** → **Settings** → **Builds**
 
-1. Create a new GitHub repo named `scorch-hot` under your account
-2. From the `scorch-hot/` folder in this monorepo, push to that repo:
-   ```bash
-   cd scorch-hot
-   git init && git add -A && git commit -m "Initial Scorch Hot"
-   git remote add origin https://github.com/YOUR_USER/scorch-hot.git
-   git push -u origin main
-   ```
-3. Cloudflare Dashboard → **Workers & Pages** → **scorch-hot-sectors**
-4. **Settings** → **Builds** → Connect to GitHub → select `scorch-hot`
-5. Build command: `npm run build` · Deploy command: `npx wrangler deploy`
+| Setting | Value |
+|---------|-------|
+| Repository | `mosabissa1981-creator/premove-scanner` |
+| Production branch | `main` |
+| Root directory | `scorch-hot` |
+| Build command | `npm run build` |
+| Deploy command | `npx wrangler deploy` |
+| Non-production branch deploy command | `npx wrangler versions upload` |
+| Non-production branch builds | Enabled |
 
-**Option B — monorepo (this repo)**
+**Important:** this is a **Worker** project, not Cloudflare Pages. Do **not** use Pages deploy syntax such as `wrangler deploy dist --project-name ...` — that fails instantly (0-second builds).
 
-1. Merge the `scorch-hot/` folder into `premove-scanner` (or keep on a branch)
-2. Connect Cloudflare to `premove-scanner` with **Root directory** = `scorch-hot`
-3. Build command: `npm run build` · Deploy command: `npm run deploy` · Version command: `npm run upload`
-4. **Branch control:** enable “Builds for non-production branches” for PR preview builds
+If the dashboard shows unsaved Runtime changes (for example an empty Compatibility flags field), click **Discard** on that bar and only save **Builds** settings.
+
+After saving, retry the failed build from **Deployments** or push a new commit.
+
+**Monorepo alternative (repo root):** leave Root directory blank, use Build `npm run build`, Deploy `npx wrangler deploy`, and Non-production `npx wrangler versions upload`. The root `wrangler.toml` and `scripts/build.mjs` handle the `scorch-hot/` subdirectory automatically when `WORKERS_CI` is set.
 
 Future pushes auto-deploy — no more manual `wrangler deploy`.
 
