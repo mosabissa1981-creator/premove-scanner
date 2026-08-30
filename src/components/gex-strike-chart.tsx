@@ -17,7 +17,7 @@ import {
 const CHART_WIDTH = 720;
 const CHART_HEIGHT = 380;
 const PAD = { top: 44, right: 82, bottom: 54, left: 82 };
-const BAR_HEIGHT_RATIO = 0.4;
+const BAR_HEIGHT_RATIO = 0.32;
 const PROFILE_SCALE_PADDING = 0.12;
 const AXIS_FONT = 22;
 const LABEL_FONT = 20;
