@@ -322,7 +322,16 @@ export function interpolateProfileAtStrike(
 
 export { isRelevantGammaFlip } from "@/lib/scoring/gex";
 
-/** Chart series: ATM window with gamma profile anchored at the flip level. */
+/** Cumulative gamma profile (OptionCharts-style) from the window start. */
+export function buildCumulativeProfile(points: GexStrikePoint[]): GexStrikePoint[] {
+  let cumulative = 0;
+  return points.map((point) => {
+    cumulative += point.netGex;
+    return { ...point, profile: cumulative };
+  });
+}
+
+/** Gamma profile anchored at zero on the flip strike (negative below, positive above). */
 export function buildFlipAnchoredProfile(
   points: GexStrikePoint[],
   stockPrice: number | null,
@@ -333,7 +342,7 @@ export function buildFlipAnchoredProfile(
   if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
 
   const sorted = [...window].sort((a, b) => a.strike - b.strike);
-  return sorted.map((point) => {
+  const profiled = sorted.map((point) => {
     let profile = 0;
     if (point.strike >= gammaFlip) {
       for (const row of sorted) {
@@ -346,6 +355,18 @@ export function buildFlipAnchoredProfile(
     }
     return { ...point, profile };
   });
+
+  const hasFlipStrike = profiled.some((point) => Math.abs(point.strike - gammaFlip) < 1e-6);
+  if (hasFlipStrike) return profiled;
+
+  const anchor: GexStrikePoint = {
+    strike: gammaFlip,
+    callGex: 0,
+    putGex: 0,
+    netGex: 0,
+    profile: 0,
+  };
+  return [...profiled, anchor].sort((a, b) => a.strike - b.strike);
 }
 
 export function prepareChartStrikeSeries(
@@ -354,14 +375,19 @@ export function prepareChartStrikeSeries(
   gammaFlip: number | null = null,
   source: "spot" | "greek" = "greek",
 ): GexStrikePoint[] {
-  if (source === "spot") {
-    const window = filterStrikeWindow(points, stockPrice);
-    let cumulative = 0;
-    return window.map((point) => {
-      cumulative += point.netGex;
-      return { ...point, profile: cumulative };
-    });
-  }
+  const window = filterStrikeWindow(points, stockPrice);
+  if (!window.length) return [];
+
+  const cumulative = buildCumulativeProfile(window);
+  if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
+
+  const atFlip = interpolateProfileAtStrike(cumulative, gammaFlip) ?? 0;
+  const atSpot =
+    stockPrice != null ? interpolateProfileAtStrike(cumulative, stockPrice) ?? 0 : 0;
+  const tolerance = Math.max(5e6, Math.abs(atSpot) * 0.08);
+  const crossesNaturally = Math.abs(atFlip) <= tolerance;
+
+  if (source === "spot" && crossesNaturally) return cumulative;
   return buildFlipAnchoredProfile(points, stockPrice, gammaFlip);
 }
 
