@@ -199,6 +199,43 @@ function interpolateRisingCrossing(prev: GexStrikePoint, curr: GexStrikePoint): 
   return prev.strike + ratio * (curr.strike - prev.strike);
 }
 
+function interpolateNetGexRisingCrossing(prev: GexStrikePoint, curr: GexStrikePoint): number {
+  const span = curr.netGex - prev.netGex;
+  if (span === 0) return curr.strike;
+  const ratio = -prev.netGex / span;
+  return prev.strike + ratio * (curr.strike - prev.strike);
+}
+
+/** Strike where per-strike net GEX crosses from negative to positive (red bars → green bars). */
+export function computeNetGexBarFlip(
+  points: GexStrikePoint[],
+  stockPrice: number | null,
+): number | null {
+  if (!points.length || stockPrice == null || stockPrice <= 0) return null;
+
+  const sorted = [...points].sort((a, b) => a.strike - b.strike);
+  const minStrike = stockPrice * 0.45;
+
+  for (let i = sorted.length - 1; i >= 1; i--) {
+    const prev = sorted[i - 1];
+    const curr = sorted[i];
+    if (curr.strike > stockPrice || prev.strike < minStrike) continue;
+    if (prev.netGex <= 0 && curr.netGex > 0) {
+      return interpolateNetGexRisingCrossing(prev, curr);
+    }
+  }
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const curr = sorted[i];
+    if (prev.netGex <= 0 && curr.netGex > 0) {
+      return interpolateNetGexRisingCrossing(prev, curr);
+    }
+  }
+
+  return null;
+}
+
 /** Recompute cumulative profile from zero at the window start (drops deep-OTM history). */
 export function rebaseProfileWindow(
   points: GexStrikePoint[],
@@ -373,22 +410,16 @@ export function prepareChartStrikeSeries(
   points: GexStrikePoint[],
   stockPrice: number | null,
   gammaFlip: number | null = null,
-  source: "spot" | "greek" = "greek",
+  _source: "spot" | "greek" = "greek",
 ): GexStrikePoint[] {
   const window = filterStrikeWindow(points, stockPrice);
   if (!window.length) return [];
 
-  const cumulative = buildCumulativeProfile(window);
-  if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
+  const barFlip = computeNetGexBarFlip(window, stockPrice);
+  const anchorFlip = barFlip ?? gammaFlip;
 
-  const atFlip = interpolateProfileAtStrike(cumulative, gammaFlip) ?? 0;
-  const atSpot =
-    stockPrice != null ? interpolateProfileAtStrike(cumulative, stockPrice) ?? 0 : 0;
-  const tolerance = Math.max(5e6, Math.abs(atSpot) * 0.08);
-  const crossesNaturally = Math.abs(atFlip) <= tolerance;
-
-  if (source === "spot" && crossesNaturally) return cumulative;
-  return buildFlipAnchoredProfile(points, stockPrice, gammaFlip);
+  if (anchorFlip == null) return rebaseProfileWindow(points, stockPrice);
+  return buildFlipAnchoredProfile(points, stockPrice, anchorFlip);
 }
 
 /** All-expiry flip: profile when reliable, OI gamma_flip, deeper vol flip for MSFT-style. */
