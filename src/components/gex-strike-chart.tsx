@@ -42,6 +42,35 @@ interface LevelLine {
   color: string;
 }
 
+interface BottomLabel {
+  key: string;
+  x: number;
+  text: string;
+  color: string;
+  fontWeight?: string;
+  pill?: boolean;
+}
+
+/** Stagger bottom strike labels when vertical lines are too close on mobile. */
+function staggerBottomLabels(labels: BottomLabel[], minSpacingPx: number): (BottomLabel & { y: number })[] {
+  const sorted = [...labels].sort((a, b) => a.x - b.x);
+  const placed: { x: number; row: number }[] = [];
+  const baseY = CHART_HEIGHT - 14;
+  const rowHeight = 24;
+
+  const withRows = sorted.map((label) => {
+    let row = 0;
+    while (placed.some((p) => p.row === row && Math.abs(p.x - label.x) < minSpacingPx)) {
+      row += 1;
+    }
+    placed.push({ x: label.x, row });
+    return { ...label, y: baseY - row * rowHeight };
+  });
+
+  const byKey = new Map(withRows.map((label) => [label.key, label]));
+  return labels.map((label) => byKey.get(label.key)!);
+}
+
 interface TooltipState {
   point: GexStrikePoint;
   x: number;
@@ -349,6 +378,29 @@ export function GexStrikeChart({
     xTicks.push(t);
   }
 
+  const bottomLabels = staggerBottomLabels(
+    [
+      ...levels.map((level) => ({
+        key: level.label,
+        x: xForStrike(level.value),
+        text: formatStrike(level.value),
+        color: level.color,
+      })),
+      ...(stockPrice != null && stockPrice >= strikeMin && stockPrice <= strikeMax
+        ? [
+            {
+              key: "spot",
+              x: xForStrike(stockPrice),
+              text: formatStrike(stockPrice),
+              color: "#eff6ff",
+              pill: true,
+            },
+          ]
+        : []),
+    ],
+    52,
+  );
+
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-950/60">
       <div className="flex flex-col gap-2 border-b border-zinc-800 px-3 py-3 text-sm text-zinc-400 sm:flex-row sm:items-center sm:justify-between sm:text-xs">
@@ -504,12 +556,46 @@ export function GexStrikeChart({
                 >
                   {level.label}
                 </text>
-                <text x={x} y={CHART_HEIGHT - 12} textAnchor="middle" fill={level.color} fontSize={VALUE_FONT} fontWeight="700">
-                  {formatStrike(level.value)}
-                </text>
               </g>
             );
           })}
+
+          {bottomLabels.map((label) =>
+            label.pill ? (
+              <g key={label.key}>
+                <rect
+                  x={label.x - 34}
+                  y={label.y - 18}
+                  width={68}
+                  height={26}
+                  rx={13}
+                  fill="#1d4ed8"
+                />
+                <text
+                  x={label.x}
+                  y={label.y}
+                  textAnchor="middle"
+                  fill={label.color}
+                  fontSize={VALUE_FONT}
+                  fontWeight="700"
+                >
+                  {label.text}
+                </text>
+              </g>
+            ) : (
+              <text
+                key={label.key}
+                x={label.x}
+                y={label.y}
+                textAnchor="middle"
+                fill={label.color}
+                fontSize={VALUE_FONT}
+                fontWeight="700"
+              >
+                {label.text}
+              </text>
+            ),
+          )}
 
           {stockPrice != null && stockPrice >= strikeMin && stockPrice <= strikeMax && (
             <g>
@@ -522,24 +608,6 @@ export function GexStrikeChart({
                 strokeWidth={1}
                 opacity={0.5}
               />
-              <rect
-                x={xForStrike(stockPrice) - 34}
-                y={PAD.top + plotH + 8}
-                width={68}
-                height={26}
-                rx={13}
-                fill="#1d4ed8"
-              />
-              <text
-                x={xForStrike(stockPrice)}
-                y={PAD.top + plotH + 26}
-                textAnchor="middle"
-                fill="#eff6ff"
-                fontSize={VALUE_FONT}
-                fontWeight="700"
-              >
-                {formatStrike(stockPrice)}
-              </text>
             </g>
           )}
 
