@@ -42,6 +42,57 @@ interface LevelLine {
   color: string;
 }
 
+function buildProfileFillPolygons(
+  points: GexStrikePoint[],
+  xForStrike: (strike: number) => number,
+  yForProfile: (profile: number) => number,
+  zeroY: number,
+): { negative: string; positive: string } {
+  if (points.length < 2) return { negative: "", positive: "" };
+
+  const negative: string[] = [];
+  const positive: string[] = [];
+
+  const addQuad = (x1: number, y1: number, x2: number, y2: number, bucket: string[]) => {
+    bucket.push(`${x1},${y1} ${x2},${y2} ${x2},${zeroY} ${x1},${zeroY}`);
+  };
+
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const x0 = xForStrike(prev.strike);
+    const x1 = xForStrike(curr.strike);
+    const y0 = yForProfile(prev.profile);
+    const y1 = yForProfile(curr.profile);
+
+    if (prev.profile <= 0 && curr.profile <= 0) {
+      addQuad(x0, y0, x1, y1, negative);
+      continue;
+    }
+    if (prev.profile >= 0 && curr.profile >= 0) {
+      addQuad(x0, y0, x1, y1, positive);
+      continue;
+    }
+
+    const span = curr.profile - prev.profile;
+    const ratio = span === 0 ? 0 : -prev.profile / span;
+    const xc = x0 + ratio * (x1 - x0);
+
+    if (prev.profile < 0) {
+      addQuad(x0, y0, xc, zeroY, negative);
+      addQuad(xc, zeroY, x1, y1, positive);
+    } else {
+      addQuad(x0, y0, xc, zeroY, positive);
+      addQuad(xc, zeroY, x1, y1, negative);
+    }
+  }
+
+  return {
+    negative: negative.join(" "),
+    positive: positive.join(" "),
+  };
+}
+
 interface BottomLabel {
   key: string;
   x: number;
@@ -358,9 +409,7 @@ export function GexStrikeChart({
   const zeroY = PAD.top + plotH / 2;
 
   const profileLine = visible.map((p) => `${xForStrike(p.strike)},${yForProfile(p.profile)}`).join(" ");
-  const profileArea = visible.length
-    ? `${profileLine} ${xForStrike(visible[visible.length - 1].strike)},${zeroY} ${xForStrike(visible[0].strike)},${zeroY}`
-    : "";
+  const profileFills = buildProfileFillPolygons(visible, xForStrike, yForProfile, profileZeroY);
 
   const levels: LevelLine[] = [];
   if (putWall != null && putWall >= strikeMin && putWall <= strikeMax) {
@@ -487,8 +536,12 @@ export function GexStrikeChart({
             </text>
           ))}
 
-          {profileArea && (
-            <polygon points={profileArea} fill="#d4a853" opacity={0.12} stroke="none" />
+          {profileFills.negative && (
+            <polygon points={profileFills.negative} fill="#f87171" opacity={0.14} stroke="none" />
+          )}
+
+          {profileFills.positive && (
+            <polygon points={profileFills.positive} fill="#d4a853" opacity={0.18} stroke="none" />
           )}
 
           {visible.map((point) => {

@@ -211,6 +211,21 @@ describe("buildFlipAnchoredProfile", () => {
 });
 
 describe("prepareChartStrikeSeries", () => {
+  it("uses flip-anchored profile when cumulative data does not cross at the flip", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "330", call_gamma_oi: "0", put_gamma_oi: "-100" },
+      { strike: "340", call_gamma_oi: "0", put_gamma_oi: "-50" },
+      { strike: "350", call_gamma_oi: "200", put_gamma_oi: "0" },
+      { strike: "360", call_gamma_oi: "100", put_gamma_oi: "0" },
+    ];
+    const series = buildStrikeSeries(rows, 355);
+    const chart = prepareChartStrikeSeries(series, 355, 345, "greek");
+    const below = chart.find((point) => point.strike === 340);
+    const above = chart.find((point) => point.strike === 360);
+    expect(below?.profile).toBeLessThan(0);
+    expect(above?.profile).toBeGreaterThan(0);
+  });
+
   it("rebases profile inside the ATM window for chart display", () => {
     const rows: UwSpotExposureStrikeRow[] = [
       { strike: "5", call_gamma_oi: "0", put_gamma_oi: "-1000" },
