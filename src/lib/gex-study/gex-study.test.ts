@@ -39,19 +39,18 @@ describe("computeGammaFlip", () => {
     expect(flip!).toBeLessThan(70);
   });
 
-  it("uses the zero crossing closest to spot when multiple exist", () => {
+  it("uses the highest zero crossing at or below spot when multiple exist", () => {
     const wideRows: UwGreekExposureStrikeRow[] = [
-      { strike: "50", call_gex: "10000", put_gex: "-50000" },
-      { strike: "55", call_gex: "10000", put_gex: "-10000" },
-      { strike: "210", call_gex: "-50000", put_gex: "10000" },
-      { strike: "215", call_gex: "200000", put_gex: "-5000" },
-      { strike: "220", call_gex: "180000", put_gex: "-15000" },
+      { strike: "50", call_gex: "0", put_gex: "-100" },
+      { strike: "60", call_gex: "200", put_gex: "0" },
+      { strike: "200", call_gex: "0", put_gex: "-500" },
+      { strike: "210", call_gex: "500", put_gex: "0" },
     ];
     const series = buildStrikeSeries(wideRows);
     const flip = computeGammaFlip(series, 217.55);
     expect(flip).not.toBeNull();
-    expect(flip!).toBeGreaterThan(210);
-    expect(flip!).toBeLessThan(220);
+    expect(flip!).toBeGreaterThan(200);
+    expect(flip!).toBeLessThan(210);
   });
 });
 

@@ -1,5 +1,5 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
-import { expiryKey, selectExpiryRows } from "@/lib/gex-scan/gex-scan";
+import { aggregateGex, expiryKey, selectExpiryRows } from "@/lib/gex-scan/gex-scan";
 import type {
   GexExpiryMode,
   GexStrikePoint,
@@ -98,16 +98,11 @@ export function computeGammaFlip(
   if (!crossings.length) return null;
   if (stockPrice == null || stockPrice <= 0) return crossings[0];
 
-  let best = crossings[0];
-  let bestDist = Math.abs(best - stockPrice);
-  for (const crossing of crossings) {
-    const dist = Math.abs(crossing - stockPrice);
-    if (dist < bestDist) {
-      best = crossing;
-      bestDist = dist;
-    }
-  }
-  return best;
+  // OptionCharts-style: use the highest zero crossing at or below spot (main flip below price).
+  const belowSpot = crossings.filter((crossing) => crossing <= stockPrice + 1e-6);
+  if (belowSpot.length) return belowSpot[belowSpot.length - 1];
+
+  return crossings[0];
 }
 
 export function computeWallsFromSeries(
@@ -207,7 +202,9 @@ export async function fetchGexStudy(
       )) as UwDataResponse<UwGreekExposureStrikeRow[]>);
 
   const fullSeries = buildStrikeSeries(strikeRes.data ?? []);
-  const totals = summarizeStrikeSeries(fullSeries);
+  const totals = useAll
+    ? aggregateGex(expiryRows)
+    : summarizeStrikeSeries(fullSeries);
   const walls = computeWallsFromSeries(fullSeries, stockPrice);
   const gammaFlip = computeGammaFlip(fullSeries, stockPrice);
 
