@@ -4,10 +4,19 @@ import {
   createBarYScale,
   createProfileYScale,
   profileSeriesPoints,
-} from "@/lib/gex-study/gex-chart-scales";
+  symmetricDomain,
+} from "@/utils/chart-domain";
 
 const PLOT_TOP = 44;
 const PLOT_HEIGHT = 282;
+
+describe("symmetricDomain", () => {
+  it("returns [-maxAbs, maxAbs] for asymmetric data", () => {
+    const domain = symmetricDomain([-391.8e6, 1_291.7e6]);
+    expect(domain.maxAbs).toBeCloseTo(1_291.7e6, -3);
+    expect(domain.domainMin).toBeCloseTo(-domain.domainMax, -3);
+  });
+});
 
 describe("createBarYScale", () => {
   it("maps bar extrema to the center band only", () => {
