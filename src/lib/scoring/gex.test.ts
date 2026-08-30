@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { pickDeepestSaneFlipBelowSpot } from "@/lib/gex-study/gex-study";
 import { computeGexLevelsFromUw, resolveGammaFlip } from "@/lib/scoring/gex";
 
 describe("resolveGammaFlip", () => {
@@ -30,6 +31,34 @@ describe("resolveGammaFlip", () => {
       492.51,
     );
     expect(flip).toBeCloseTo(404.27, 1);
+  });
+
+  it("merges oi and vol candidates and keeps the deepest flip below spot", () => {
+    const oiFlip = resolveGammaFlip(
+      {
+        gamma_flip: "492.51",
+        nearby_flips: ["492.51"],
+        call_wall: null,
+        put_wall: null,
+        gamma_magnet: null,
+      },
+      513.15,
+      null,
+    );
+    const volFlip = resolveGammaFlip(
+      {
+        gamma_flip: "404.27",
+        nearby_flips: ["404.27"],
+        call_wall: null,
+        put_wall: null,
+        gamma_magnet: null,
+      },
+      513.15,
+      null,
+    );
+    expect(oiFlip).toBeCloseTo(492.51, 1);
+    expect(volFlip).toBeCloseTo(404.27, 1);
+    expect(pickDeepestSaneFlipBelowSpot([oiFlip, volFlip], 513.15)).toBeCloseTo(404.27, 1);
   });
 
   it("uses nearby_flips when primary flip is deep OTM", () => {

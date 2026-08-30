@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildStrikeSeries,
   computeGammaFlip,
+  computeGammaFlipDeep,
   computeGammaFlipFromWindow,
   computeWallsFromSeries,
   filterStrikeWindow,
+  pickDeepestSaneFlipBelowSpot,
   rebaseProfileWindow,
   summarizeStrikeSeries,
 } from "@/lib/gex-study/gex-study";
@@ -121,6 +123,33 @@ describe("computeGammaFlipFromWindow", () => {
     expect(flip).not.toBeNull();
     expect(flip!).toBeGreaterThan(180);
     expect(flip!).toBeLessThan(215);
+  });
+});
+
+describe("computeGammaFlipDeep", () => {
+  it("uses the deepest rising crossing below spot on the full profile", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "380", call_gamma_oi: "0", put_gamma_oi: "-500" },
+      { strike: "405", call_gamma_oi: "700", put_gamma_oi: "0" },
+      { strike: "470", call_gamma_oi: "0", put_gamma_oi: "-200" },
+      { strike: "490", call_gamma_oi: "300", put_gamma_oi: "0" },
+      { strike: "520", call_gamma_oi: "100", put_gamma_oi: "-50" },
+    ];
+    const series = buildStrikeSeries(rows);
+    const deep = computeGammaFlipDeep(series, 513.15);
+    const near = computeGammaFlipFromWindow(series, 513.15);
+    expect(deep).not.toBeNull();
+    expect(deep!).toBeGreaterThan(390);
+    expect(deep!).toBeLessThan(420);
+    expect(near).not.toBeNull();
+    expect(near!).toBeGreaterThan(deep!);
+  });
+});
+
+describe("pickDeepestSaneFlipBelowSpot", () => {
+  it("prefers the deeper flip when UW returns a nearer level", () => {
+    const flip = pickDeepestSaneFlipBelowSpot([492.51, 404.27, 464.68], 513.15);
+    expect(flip).toBeCloseTo(404.27, 1);
   });
 });
 

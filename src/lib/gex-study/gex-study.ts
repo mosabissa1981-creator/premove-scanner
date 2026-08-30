@@ -41,13 +41,35 @@ export function buildStrikeSeries(
   const minStrike =
     stockPrice != null && stockPrice > 0 ? stockPrice * 0.15 : 0;
 
+  return buildStrikeSeriesFromRows(rows, (strike) => strike >= minStrike);
+}
+
+/** Full-chain series for gamma flip (keeps deep strikes, drops zero-noise junk). */
+export function buildFlipSeries(
+  rows: UwSpotExposureStrikeRow[],
+  stockPrice: number | null = null,
+): GexStrikePoint[] {
+  return buildStrikeSeriesFromRows(rows, (strike, netGex) => {
+    if (strike <= 0) return false;
+    if (stockPrice != null && stockPrice > 0 && strike < stockPrice * 0.25) {
+      return Math.abs(netGex) >= 1000;
+    }
+    return true;
+  });
+}
+
+function buildStrikeSeriesFromRows(
+  rows: UwSpotExposureStrikeRow[],
+  keepStrike: (strike: number, netGex: number) => boolean,
+): GexStrikePoint[] {
   const sorted = [...rows]
     .map((row) => {
       const strike = parseNum(row.strike);
       const { callGex, putGex } = readSpotStrikeGex(row);
-      return { strike, callGex, putGex, netGex: callGex + putGex, profile: 0 };
+      const netGex = callGex + putGex;
+      return { strike, callGex, putGex, netGex, profile: 0 };
     })
-    .filter((row) => row.strike >= minStrike)
+    .filter((row) => keepStrike(row.strike, row.netGex))
     .sort((a, b) => a.strike - b.strike);
 
   let cumulative = 0;
@@ -187,6 +209,35 @@ export function computeGammaFlip(
       ? crossing
       : best,
   ).strike;
+}
+
+/** Deepest rising zero crossing below spot on the full strike profile. */
+export function computeGammaFlipDeep(
+  points: GexStrikePoint[],
+  stockPrice: number | null,
+): number | null {
+  if (!points.length || stockPrice == null || stockPrice <= 0) return null;
+
+  const crossings = collectProfileCrossings(points).filter(
+    (crossing) =>
+      crossing.rising &&
+      crossing.strike <= stockPrice + 1e-6 &&
+      isSaneGammaFlip(crossing.strike, stockPrice),
+  );
+  if (!crossings.length) return null;
+  return Math.min(...crossings.map((crossing) => crossing.strike));
+}
+
+export function pickDeepestSaneFlipBelowSpot(
+  candidates: (number | null | undefined)[],
+  stockPrice: number,
+): number | null {
+  const sane = candidates.filter(
+    (flip): flip is number =>
+      flip != null && isSaneGammaFlip(flip, stockPrice) && flip <= stockPrice + 1e-6,
+  );
+  if (!sane.length) return null;
+  return Math.min(...sane);
 }
 
 export function computeWallsFromSeries(
@@ -377,6 +428,36 @@ function latestSpotNetGex(
   return Number.isNaN(net) ? null : net;
 }
 
+function mergeGexLevelsForFlip(
+  ...sources: (UwGexLevels | null | undefined)[]
+): UwGexLevels | null {
+  const nearby_flips: string[] = [];
+  const seen = new Set<string>();
+  let gamma_flip: string | null = null;
+
+  const add = (value: string | null | undefined) => {
+    if (value == null || value === "" || seen.has(value)) return;
+    seen.add(value);
+    nearby_flips.push(value);
+    if (gamma_flip == null) gamma_flip = value;
+  };
+
+  for (const source of sources) {
+    if (!source) continue;
+    add(source.gamma_flip);
+    for (const flip of source.nearby_flips ?? []) add(flip);
+  }
+
+  if (!nearby_flips.length && gamma_flip == null) return null;
+  return {
+    gamma_flip,
+    nearby_flips,
+    call_wall: null,
+    put_wall: null,
+    gamma_magnet: null,
+  };
+}
+
 export async function fetchGexStudy(
   client: UnusualWhalesClient,
   ticker: string,
@@ -384,11 +465,15 @@ export async function fetchGexStudy(
 ): Promise<GexStudyResult> {
   const useAll = expiry === "all";
 
-  const [exposureRes, ohlcRes, strikePayload, levelsRes, spotTotalsRes] = await Promise.all([
+  const [exposureRes, ohlcRes, strikePayload, levelsOiRes, levelsVolRes, spotTotalsRes] =
+    await Promise.all([
     client.greekExposureByExpiry(ticker) as Promise<UwDataResponse<UwGreekExposureExpiryRow[]>>,
     client.ohlc(ticker, "1d", 1) as Promise<UwDataResponse<UwCandle[]>>,
     fetchStrikeRowsWithFallback(client, ticker, useAll ? undefined : expiry),
     client.gexLevels(ticker, "oi") as Promise<UwDataResponse<UwGexLevels>>,
+    useAll
+      ? (client.gexLevels(ticker, "vol") as Promise<UwDataResponse<UwGexLevels>>)
+      : Promise.resolve(null),
     useAll
       ? (client.spotExposures(ticker) as Promise<UwDataResponse<UwSpotExposureSnapshot[]>>)
       : Promise.resolve(null),
@@ -424,9 +509,14 @@ export async function fetchGexStudy(
   }
 
   const profileFlip = computeGammaFlipFromWindow(fullSeries, stockPrice);
-  const levelsFlip = resolveGammaFlip(levelsRes?.data, stockPrice ?? 0, null);
-  const levels = levelsRes?.data
-    ? computeGexLevelsFromUw(levelsRes.data, stockPrice ?? 0)
+  const flipSeries = buildFlipSeries(strikeRows, stockPrice);
+  const deepProfileFlip = computeGammaFlipDeep(flipSeries, stockPrice);
+  const mergedFlipLevels = useAll
+    ? mergeGexLevelsForFlip(levelsOiRes?.data, levelsVolRes?.data)
+    : levelsOiRes?.data;
+  const levelsFlip = resolveGammaFlip(mergedFlipLevels, stockPrice ?? 0, null);
+  const levels = levelsOiRes?.data
+    ? computeGexLevelsFromUw(levelsOiRes.data, stockPrice ?? 0)
     : null;
 
   let callWall = levels?.callWall ?? null;
@@ -437,9 +527,13 @@ export async function fetchGexStudy(
     profileFlip != null && spot > 0 && isSaneGammaFlip(profileFlip, spot) ? profileFlip : null;
   const saneLevelsFlip =
     levelsFlip != null && spot > 0 && isSaneGammaFlip(levelsFlip, spot) ? levelsFlip : null;
+  const saneDeepProfileFlip =
+    deepProfileFlip != null && spot > 0 && isSaneGammaFlip(deepProfileFlip, spot)
+      ? deepProfileFlip
+      : null;
 
   let gammaFlip = useAll
-    ? (saneLevelsFlip ?? saneProfileFlip)
+    ? pickDeepestSaneFlipBelowSpot([saneLevelsFlip, saneDeepProfileFlip], spot)
     : (saneProfileFlip ?? computeGammaFlip(fullSeries, stockPrice));
 
   if (gammaFlip != null && spot > 0 && !isSaneGammaFlip(gammaFlip, spot)) {
