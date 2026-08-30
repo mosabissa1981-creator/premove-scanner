@@ -1,9 +1,11 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
 import {
+  buildRebaseAtFlipProfile,
   dedupeChainLegs,
-  gammaFlipFromSimulatedProfile,
+  gammaFlipFromRawProfile,
   mergeSimulatedProfileOntoBars,
   simulateGammaProfile,
+  simulateRawNetGexProfile,
   type OptionChainLeg,
 } from "@/lib/gex-study/gamma-profile-sim";
 import {
@@ -978,23 +980,26 @@ async function fetchOptionContractsPaginated(
   expiryFilter: string | undefined,
   dteByExpiry: Map<string, number>,
 ): Promise<OptionChainLeg[]> {
-  const legs: OptionChainLeg[] = [];
-
-  for (let page = 0; page < 40; page++) {
-    const res = (await client.optionContracts(ticker, {
-      date: tradingDate,
-      expiry: expiryFilter && expiryFilter !== "all" ? expiryFilter : undefined,
-      excludeZeroOiChains: true,
-      page,
-      limit: 500,
-    })) as UwDataResponse<UwOptionContractRow[]>;
-    const batch = res.data ?? [];
-    if (!batch.length) break;
-    legs.push(...parseOptionContractRows(batch, expiryFilter, dteByExpiry));
-    if (batch.length < 500) break;
+  for (const date of [tradingDate, undefined]) {
+    const legs: OptionChainLeg[] = [];
+    for (let page = 0; page < 40; page++) {
+      const res = (await client.optionContracts(ticker, {
+        date,
+        expiry: expiryFilter && expiryFilter !== "all" ? expiryFilter : undefined,
+        excludeZeroOiChains: true,
+        page,
+        limit: 500,
+      })) as UwDataResponse<UwOptionContractRow[]>;
+      const batch = res.data ?? [];
+      if (!batch.length) break;
+      legs.push(...parseOptionContractRows(batch, expiryFilter, dteByExpiry));
+      if (batch.length < 500) break;
+    }
+    const deduped = dedupeChainLegs(legs);
+    if (deduped.length >= 4) return deduped;
   }
 
-  return dedupeChainLegs(legs);
+  return [];
 }
 
 async function fetchOptionChainLegs(
@@ -1015,7 +1020,7 @@ async function fetchOptionChainLegs(
     expiryFilter,
     dteByExpiry,
   );
-  if (contractLegs.length >= 8) return contractLegs;
+  if (contractLegs.length >= 4) return contractLegs;
 
   try {
     const res = (await client.optionChains(ticker, {
@@ -1030,19 +1035,46 @@ async function fetchOptionChainLegs(
   }
 }
 
+function buildBarRebasedProfile(
+  bars: GexStrikePoint[],
+  stockPrice: number | null,
+  gammaFlip: number | null,
+): GexStrikePoint[] {
+  const windowed = filterStrikeWindow(bars, stockPrice);
+  if (!windowed.length) return [];
+  if (gammaFlip == null) return rebaseProfileWindow(bars, stockPrice);
+
+  const raw = windowed.map((bar) => ({
+    simulatedSpot: bar.strike,
+    rawNetGex: bar.netGex,
+  }));
+  const profile = buildRebaseAtFlipProfile(raw, gammaFlip);
+  return mergeSimulatedProfileOntoBars(windowed, profile, gammaFlip);
+}
+
 function buildSimulatedChartStrikes(
   bars: GexStrikePoint[],
   legs: OptionChainLeg[],
   stockPrice: number,
   tradingDate: string,
+  gammaFlip: number | null,
 ): { strikes: GexStrikePoint[]; simulatedFlip: number | null } {
-  const profile = simulateGammaProfile(legs, stockPrice, {
+  const raw = simulateRawNetGexProfile(legs, stockPrice, {
     asOfDate: tradingDate,
     steps: 250,
   });
-  if (!profile.length) return { strikes: bars, simulatedFlip: null };
+  if (!raw.length) return { strikes: bars, simulatedFlip: null };
 
-  const simulatedFlip = gammaFlipFromSimulatedProfile(profile, stockPrice);
+  const simulatedFlip = gammaFlipFromRawProfile(raw, stockPrice);
+  const anchorFlip = gammaFlip ?? simulatedFlip;
+  if (anchorFlip == null) return { strikes: bars, simulatedFlip };
+
+  const profile = simulateGammaProfile(legs, stockPrice, {
+    asOfDate: tradingDate,
+    steps: 250,
+    gammaFlip: anchorFlip,
+  });
+
   const windowed = filterStrikeWindow(bars, stockPrice);
   if (!windowed.length) return { strikes: bars, simulatedFlip };
 
@@ -1051,7 +1083,7 @@ function buildSimulatedChartStrikes(
   const windowProfile = profile.filter(
     (point) => point.simulatedSpot >= minStrike && point.simulatedSpot <= maxStrike,
   );
-  const strikes = mergeSimulatedProfileOntoBars(windowed, windowProfile);
+  const strikes = mergeSimulatedProfileOntoBars(windowed, windowProfile, anchorFlip);
   return { strikes, simulatedFlip };
 }
 
@@ -1142,11 +1174,9 @@ export async function fetchGexStudy(
     computeGammaFlipFromWindow(profileSource, stockPrice);
 
   let simulatedFlip: number | null = null;
-  let chartStrikes: GexStrikePoint[] | null = null;
-  if (chainLegs.length >= 8 && stockPrice != null && stockPrice > 0) {
-    const simulated = buildSimulatedChartStrikes(fullSeries, chainLegs, stockPrice, tradingDate);
-    simulatedFlip = simulated.simulatedFlip;
-    chartStrikes = simulated.strikes;
+  if (chainLegs.length >= 4 && stockPrice != null && stockPrice > 0) {
+    const raw = simulateRawNetGexProfile(chainLegs, stockPrice, { asOfDate: tradingDate });
+    simulatedFlip = gammaFlipFromRawProfile(raw, stockPrice);
   }
 
   const profileFlip = simulatedFlip ?? profileFlipFromBars;
@@ -1170,6 +1200,19 @@ export async function fetchGexStudy(
 
   if (gammaFlip != null && spot > 0 && !isSaneGammaFlip(gammaFlip, spot)) {
     gammaFlip = null;
+  }
+
+  let chartStrikes: GexStrikePoint[] | null = null;
+  if (chainLegs.length >= 4 && stockPrice != null && stockPrice > 0) {
+    const simulated = buildSimulatedChartStrikes(
+      fullSeries,
+      chainLegs,
+      stockPrice,
+      tradingDate,
+      gammaFlip,
+    );
+    chartStrikes = simulated.strikes;
+    simulatedFlip = simulated.simulatedFlip ?? simulatedFlip;
   }
 
   if (!useAll) {
@@ -1206,8 +1249,7 @@ export async function fetchGexStudy(
     regime,
     flipDistancePct,
     strikes:
-      chartStrikes ??
-      prepareChartStrikeSeries(fullSeries, stockPrice, gammaFlip, profileSource),
+      chartStrikes ?? buildBarRebasedProfile(fullSeries, stockPrice, gammaFlip),
     availableExpiries,
   };
 }

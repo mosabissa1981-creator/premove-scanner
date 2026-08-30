@@ -8,10 +8,17 @@ export interface OptionChainLeg {
   dte: number;
 }
 
+export interface RawSimulatedPoint {
+  simulatedSpot: number;
+  rawNetGex: number;
+}
+
 export interface SimulatedProfilePoint {
   /** Hypothetical underlying spot price used in this simulation step. */
   simulatedSpot: number;
+  /** Rebased cumulative profile (0 at gamma flip). */
   profile: number;
+  rawNetGex?: number;
 }
 
 export interface GammaProfileSimOptions {
@@ -21,6 +28,8 @@ export interface GammaProfileSimOptions {
   paddingPct?: number;
   /** Trading session date (YYYY-MM-DD) for per-contract time to expiry. */
   asOfDate?: string;
+  /** When set, rebase the cumulative profile at this flip price. */
+  gammaFlip?: number | null;
 }
 
 const DEFAULT_RISK_FREE_RATE = 0.04;
@@ -61,7 +70,6 @@ export function dollarGammaExposure(
 ): number {
   const unitGamma = blackScholesGamma(simulatedSpot, strike, timeYears, riskFreeRate, iv);
   const direction = type === "C" ? 1 : -1;
-  // Scale to a 1% move of the simulated spot (S_sim), not the contract strike K.
   return unitGamma * oi * 100 * simulatedSpot * simulatedSpot * 0.01 * direction;
 }
 
@@ -122,12 +130,15 @@ export function totalGammaAtSpot(
   return totalGex;
 }
 
-/** OptionCharts-style gamma profile: independent total GEX at each hypothetical spot. */
-export function simulateGammaProfile(
+/**
+ * Step 1: raw Net GEX at each simulated spot along the x-axis.
+ * Each loop iteration resets the accumulator — no running sum across spots.
+ */
+export function simulateRawNetGexProfile(
   legs: OptionChainLeg[],
   stockPrice: number,
   options: GammaProfileSimOptions = {},
-): SimulatedProfilePoint[] {
+): RawSimulatedPoint[] {
   if (!legs.length || stockPrice <= 0) return [];
 
   const steps = options.steps ?? DEFAULT_STEPS;
@@ -142,15 +153,162 @@ export function simulateGammaProfile(
     asOfDate: options.asOfDate,
   };
 
-  const points: SimulatedProfilePoint[] = [];
+  const points: RawSimulatedPoint[] = [];
   for (let i = 0; i <= steps; i++) {
     const simulatedSpot = min + (span * i) / steps;
-    // Fresh accumulator per simulated spot — never carry state across the x-axis.
-    const profile = totalGammaAtSpot(legs, simulatedSpot, simOptions);
-    points.push({ simulatedSpot, profile });
+    let totalGex = 0;
+    for (const leg of legs) {
+      if (leg.oi <= 0) continue;
+      const iv = leg.iv > 0 ? leg.iv : (simOptions.defaultIv ?? DEFAULT_IV);
+      const timeYears = contractTimeYears(leg, simOptions.asOfDate ?? new Date().toISOString().slice(0, 10));
+      totalGex += dollarGammaExposure(
+        simulatedSpot,
+        leg.strike,
+        timeYears,
+        simOptions.riskFreeRate ?? DEFAULT_RISK_FREE_RATE,
+        iv,
+        leg.oi,
+        leg.type,
+      );
+    }
+    points.push({ simulatedSpot, rawNetGex: totalGex });
   }
 
   return points;
+}
+
+function interpolateSeriesAtSpot(
+  points: { simulatedSpot: number }[],
+  values: number[],
+  spot: number,
+): number {
+  if (!points.length) return 0;
+  if (spot <= points[0].simulatedSpot) return values[0];
+  const last = points.length - 1;
+  if (spot >= points[last].simulatedSpot) return values[last];
+
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    if (spot < prev.simulatedSpot || spot > curr.simulatedSpot) continue;
+    const span = curr.simulatedSpot - prev.simulatedSpot;
+    if (span === 0) return values[i];
+    const ratio = (spot - prev.simulatedSpot) / span;
+    return values[i - 1] + ratio * (values[i] - values[i - 1]);
+  }
+
+  return values[last];
+}
+
+/** Step 2: rising zero crossing of raw Net GEX below spot. */
+export function gammaFlipFromRawProfile(
+  raw: RawSimulatedPoint[],
+  stockPrice: number,
+): number | null {
+  if (!raw.length || stockPrice <= 0) return null;
+
+  const sorted = [...raw].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
+  const minStrike = stockPrice * 0.45;
+
+  for (let i = sorted.length - 1; i >= 1; i--) {
+    const prev = sorted[i - 1];
+    const curr = sorted[i];
+    if (curr.simulatedSpot > stockPrice || prev.simulatedSpot < minStrike) continue;
+    if (prev.rawNetGex <= 0 && curr.rawNetGex >= 0) {
+      const span = curr.rawNetGex - prev.rawNetGex;
+      if (span === 0) return curr.simulatedSpot;
+      const ratio = -prev.rawNetGex / span;
+      return prev.simulatedSpot + ratio * (curr.simulatedSpot - prev.simulatedSpot);
+    }
+  }
+
+  return null;
+}
+
+/** Step 3: index of the last simulated spot at or below the gamma flip price. */
+export function flipIndexForPrice(raw: RawSimulatedPoint[], gammaFlip: number): number {
+  const sorted = [...raw].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
+  let flipIndex = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    if (sorted[i].simulatedSpot <= gammaFlip) flipIndex = i;
+  }
+  return flipIndex;
+}
+
+/**
+ * Steps 4–5: OptionCharts rebase-at-flip cumulative profile.
+ *
+ * 1. `rawValues[i]` = isolated net GEX at spot/strike i (not a running sum).
+ * 2. Forward from flip index:  cum[i] = cum[i-1] + raw[i]
+ * 3. Backward from flip index: cum[i] = cum[i+1] + raw[i]  (accumulates negative below flip)
+ * 4. Subtract interpolated cum at the exact gamma flip → profile crosses $0 at flip.
+ */
+export function buildRebaseAtFlipFromValues(
+  spots: number[],
+  rawValues: number[],
+  gammaFlip: number,
+): SimulatedProfilePoint[] {
+  const n = spots.length;
+  if (!n || !Number.isFinite(gammaFlip)) return [];
+
+  let flipIndex = 0;
+  for (let i = 0; i < n; i++) {
+    if (spots[i] <= gammaFlip) flipIndex = i;
+  }
+
+  const cumulative = new Array<number>(n).fill(0);
+  cumulative[flipIndex] = rawValues[flipIndex] ?? 0;
+
+  for (let i = flipIndex + 1; i < n; i++) {
+    cumulative[i] = cumulative[i - 1] + (rawValues[i] ?? 0);
+  }
+
+  for (let i = flipIndex - 1; i >= 0; i--) {
+    cumulative[i] = cumulative[i + 1] + (rawValues[i] ?? 0);
+  }
+
+  const anchor = interpolateSeriesAtSpot(
+    spots.map((simulatedSpot) => ({ simulatedSpot })),
+    cumulative,
+    gammaFlip,
+  );
+
+  return spots.map((simulatedSpot, i) => ({
+    simulatedSpot,
+    profile: cumulative[i] - anchor,
+    rawNetGex: rawValues[i],
+  }));
+}
+
+export function buildRebaseAtFlipProfile(
+  raw: RawSimulatedPoint[],
+  gammaFlip: number,
+): SimulatedProfilePoint[] {
+  const sorted = [...raw].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
+  if (!sorted.length || !Number.isFinite(gammaFlip)) return [];
+
+  return buildRebaseAtFlipFromValues(
+    sorted.map((point) => point.simulatedSpot),
+    sorted.map((point) => point.rawNetGex),
+    gammaFlip,
+  );
+}
+
+/** Full OptionCharts profile: raw BS net GEX → cumulative rebase at flip. */
+export function simulateGammaProfile(
+  legs: OptionChainLeg[],
+  stockPrice: number,
+  options: GammaProfileSimOptions = {},
+): SimulatedProfilePoint[] {
+  const raw = simulateRawNetGexProfile(legs, stockPrice, options);
+  if (!raw.length) return [];
+
+  const gammaFlip =
+    options.gammaFlip ??
+    gammaFlipFromRawProfile(raw, stockPrice) ??
+    stockPrice;
+
+  return buildRebaseAtFlipProfile(raw, gammaFlip);
 }
 
 export function interpolateSimulatedProfile(
@@ -176,7 +334,7 @@ export function interpolateSimulatedProfile(
   return null;
 }
 
-/** Deepest rising zero crossing of the simulated profile below spot. */
+/** Deepest rising zero crossing of the rebased profile below spot. */
 export function gammaFlipFromSimulatedProfile(
   profile: SimulatedProfilePoint[],
   stockPrice: number,
@@ -205,19 +363,17 @@ export function gammaFlipFromSimulatedProfile(
 export function mergeSimulatedProfileOntoBars(
   bars: { strike: number; callGex: number; putGex: number; netGex: number; profile: number }[],
   profile: SimulatedProfilePoint[],
+  gammaFlip: number | null = null,
 ): typeof bars {
   if (!profile.length) {
     return bars.map((point) => ({ ...point, profile: 0 }));
   }
 
   const sortedProfile = [...profile].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
-  const minSpot = sortedProfile[0].simulatedSpot;
-  const maxSpot = sortedProfile[sortedProfile.length - 1].simulatedSpot;
   const barByStrike = new Map(bars.map((bar) => [bar.strike, bar]));
 
   const merged: typeof bars = [];
   for (const point of sortedProfile) {
-    if (point.simulatedSpot < minSpot || point.simulatedSpot > maxSpot) continue;
     const bar = barByStrike.get(point.simulatedSpot);
     if (bar) {
       merged.push({ ...bar, profile: point.profile });
@@ -241,7 +397,20 @@ export function mergeSimulatedProfileOntoBars(
     }
   }
 
-  return merged.sort((a, b) => a.strike - b.strike);
+  const sorted = merged.sort((a, b) => a.strike - b.strike);
+  if (gammaFlip == null) return sorted;
+
+  const hasFlip = sorted.some((point) => Math.abs(point.strike - gammaFlip) < 1e-6);
+  if (hasFlip) return sorted;
+
+  const anchor = {
+    strike: gammaFlip,
+    callGex: 0,
+    putGex: 0,
+    netGex: 0,
+    profile: 0,
+  };
+  return [...sorted, anchor].sort((a, b) => a.strike - b.strike);
 }
 
 /** Remove duplicate contracts (same expiry/strike/type). */
