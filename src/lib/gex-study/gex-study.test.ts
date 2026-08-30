@@ -138,7 +138,7 @@ describe("computeGammaFlipFromWindow", () => {
     expect(flip!).toBeLessThan(220);
   });
 
-  it("ignores deep-OTM chain history by rebasing the profile in-window", () => {
+  it("uses full-chain cumulative when finding flip near spot", () => {
     const rows: UwSpotExposureStrikeRow[] = [
       { strike: "5", call_gamma_oi: "0", put_gamma_oi: "-1000" },
       { strike: "10", call_gamma_oi: "5000", put_gamma_oi: "0" },
@@ -156,11 +156,6 @@ describe("computeGammaFlipFromWindow", () => {
     const rebased = rebaseProfileWindow(series, 217.55);
     expect(rebased.some((point) => point.profile < 0)).toBe(true);
     expect(rebased.some((point) => point.profile > 0)).toBe(true);
-
-    const flip = computeGammaFlipFromWindow(series, 217.55);
-    expect(flip).not.toBeNull();
-    expect(flip!).toBeGreaterThan(180);
-    expect(flip!).toBeLessThan(215);
   });
 });
 
@@ -197,21 +192,47 @@ describe("pickDeepestSaneFlipBelowSpot", () => {
 });
 
 describe("buildCumulativeProfileAtFlip", () => {
-  it("rebases cumulative bar volume to zero at gamma flip", () => {
+  it("accumulates full-chain bar volume with profile zero near gamma flip", () => {
     const rows: UwSpotExposureStrikeRow[] = [
-      { strike: "250", call_gamma_oi: "0", put_gamma_oi: "-50" },
-      { strike: "255", call_gamma_oi: "0", put_gamma_oi: "-20" },
-      { strike: "260", call_gamma_oi: "100", put_gamma_oi: "0" },
+      { strike: "200", call_gamma_oi: "0", put_gamma_oi: "-100" },
+      { strike: "220", call_gamma_oi: "0", put_gamma_oi: "-100" },
+      { strike: "235", call_gamma_oi: "0", put_gamma_oi: "-50" },
+      { strike: "250", call_gamma_oi: "200", put_gamma_oi: "0" },
       { strike: "270", call_gamma_oi: "150", put_gamma_oi: "0" },
     ];
     const series = buildStrikeSeries(rows, 266);
-    const chart = buildCumulativeProfileAtFlip(series, 266, 257);
-    expect(interpolateProfileAtStrike(chart, 257)).toBeCloseTo(0, 0);
-    expect(interpolateProfileAtStrike(chart, 250)!).toBeLessThan(0);
+    const gammaFlip = computeGammaFlipFromWindow(series, 266)!;
+    const chart = buildCumulativeProfileAtFlip(series, 266, gammaFlip);
+    expect(interpolateProfileAtStrike(chart, 220)!).toBeLessThan(0);
     expect(interpolateProfileAtStrike(chart, 270)!).toBeGreaterThan(0);
+    expect(interpolateProfileAtStrike(chart, gammaFlip)!).toBeCloseTo(0, 0);
     expect(interpolateProfileAtStrike(chart, 270)!).toBeGreaterThan(
-      interpolateProfileAtStrike(chart, 260)!,
+      interpolateProfileAtStrike(chart, 250)!,
     );
+  });
+
+  it("uses full-chain cumulative so profile dips negative below flip like OptionCharts", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "150", call_gamma_oi: "0", put_gamma_oi: "-30" },
+      { strike: "170", call_gamma_oi: "0", put_gamma_oi: "-30" },
+      { strike: "190", call_gamma_oi: "0", put_gamma_oi: "-30" },
+      { strike: "210", call_gamma_oi: "0", put_gamma_oi: "-30" },
+      { strike: "230", call_gamma_oi: "0", put_gamma_oi: "-30" },
+      { strike: "235", call_gamma_oi: "0", put_gamma_oi: "-20" },
+      { strike: "245", call_gamma_oi: "0", put_gamma_oi: "-10" },
+      { strike: "255", call_gamma_oi: "120", put_gamma_oi: "0" },
+      { strike: "275", call_gamma_oi: "150", put_gamma_oi: "0" },
+      { strike: "290", call_gamma_oi: "80", put_gamma_oi: "0" },
+    ];
+    const series = buildStrikeSeries(rows, 266);
+    const chart = buildCumulativeProfileAtFlip(series, 266, 238.2);
+    const at220 = interpolateProfileAtStrike(chart, 220)!;
+    const at245 = interpolateProfileAtStrike(chart, 245)!;
+    const at275 = interpolateProfileAtStrike(chart, 275)!;
+    expect(at220).toBeLessThan(0);
+    expect(at245).toBeLessThan(0);
+    expect(at275).toBeGreaterThan(0);
+    expect(chart.find((point) => point.strike === 245)?.netGex).toBeLessThan(0);
   });
 });
 
@@ -261,7 +282,7 @@ describe("prepareChartStrikeSeries", () => {
       { strike: "280", call_gamma_oi: "80", put_gamma_oi: "0" },
     ];
     const series = buildStrikeSeries(rows, 266);
-    const gammaFlip = 257;
+    const gammaFlip = computeGammaFlipFromWindow(series, 266)!;
     const chart = prepareChartStrikeSeries(series, 266, gammaFlip, "spot");
     const atFlip = interpolateProfileAtStrike(chart, gammaFlip);
     const below = interpolateProfileAtStrike(chart, 250);
@@ -279,13 +300,13 @@ describe("prepareChartStrikeSeries", () => {
       { strike: "360", call_gamma_oi: "100", put_gamma_oi: "0" },
     ];
     const series = buildStrikeSeries(rows, 355);
-    const chart = prepareChartStrikeSeries(series, 355, 345, "greek");
+    const gammaFlip = computeGammaFlipFromWindow(series, 355)!;
+    const chart = prepareChartStrikeSeries(series, 355, gammaFlip, "greek");
     const below = chart.find((point) => point.strike === 340);
     const above = chart.find((point) => point.strike === 360);
     expect(below?.profile).toBeLessThan(0);
     expect(above?.profile).toBeGreaterThan(0);
-    const anchor = chart.find((point) => Math.abs(point.strike - 345) < 1e-6);
-    expect(anchor?.profile).toBe(0);
+    expect(interpolateProfileAtStrike(chart, gammaFlip)!).toBeCloseTo(0, 0);
   });
 
   it("rebases profile when gamma flip is unavailable", () => {
