@@ -272,7 +272,7 @@ export function computeGammaFlipDeep(
     (crossing) =>
       crossing.rising &&
       crossing.strike <= stockPrice + 1e-6 &&
-      isSaneGammaFlip(crossing.strike, stockPrice),
+      isRelevantGammaFlip(crossing.strike, stockPrice),
   );
   if (!crossings.length) return null;
   return Math.min(...crossings.map((crossing) => crossing.strike));
@@ -284,10 +284,39 @@ export function pickDeepestSaneFlipBelowSpot(
 ): number | null {
   const sane = candidates.filter(
     (flip): flip is number =>
-      flip != null && isSaneGammaFlip(flip, stockPrice) && flip <= stockPrice + 1e-6,
+      flip != null && isRelevantGammaFlip(flip, stockPrice) && flip <= stockPrice + 1e-6,
   );
   if (!sane.length) return null;
   return Math.min(...sane);
+}
+
+/** Flip must sit in a tradeable band near spot (rejects deep-OTM junk like TSLA ~$104). */
+export function isRelevantGammaFlip(flip: number, stockPrice: number): boolean {
+  if (!isSaneGammaFlip(flip, stockPrice)) return false;
+  return flip >= stockPrice * 0.5;
+}
+
+/** All-expiry flip: ATM profile first, deeper UW level when valid, ignore junk crossings. */
+export function pickAllExpiryGammaFlip(
+  profileFlip: number | null,
+  levelsFlip: number | null,
+  deepProfileFlip: number | null,
+  stockPrice: number,
+): number | null {
+  const relevant = (flip: number | null | undefined): number | null =>
+    flip != null && stockPrice > 0 && isRelevantGammaFlip(flip, stockPrice) && flip <= stockPrice + 1e-6
+      ? flip
+      : null;
+
+  const profile = relevant(profileFlip);
+  const levels = relevant(levelsFlip);
+  const deep = relevant(deepProfileFlip);
+
+  if (profile && levels) return Math.min(profile, levels);
+  if (profile) return profile;
+  if (levels) return levels;
+  if (deep) return deep;
+  return null;
 }
 
 export function computeWallsFromSeries(
@@ -695,7 +724,7 @@ export async function fetchGexStudy(
       : null;
 
   let gammaFlip = useAll
-    ? pickDeepestSaneFlipBelowSpot([saneLevelsFlip, saneDeepProfileFlip], spot)
+    ? pickAllExpiryGammaFlip(saneProfileFlip, saneLevelsFlip, saneDeepProfileFlip, spot)
     : (saneProfileFlip ?? computeGammaFlip(fullSeries, stockPrice));
 
   if (gammaFlip != null && spot > 0 && !isSaneGammaFlip(gammaFlip, spot)) {
