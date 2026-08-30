@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/build.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "deploy": "node scripts/cloudflare-deploy.mjs"
   },
   "dependencies": {
     "next": "16.3.3",
@@ -24,6 +25,7 @@
     "eslint-config-next": "16.3.3",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "wrangler": "^4.14.0"
   }
 }

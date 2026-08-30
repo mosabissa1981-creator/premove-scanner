@@ -1,0 +1,38 @@
+name: Scorch Hot Cloudflare
+
+on:
+  pull_request:
+    paths:
+      - "scorch-hot/**"
+      - "scripts/build.mjs"
+      - "wrangler.toml"
+  push:
+    branches:
+      - main
+    paths:
+      - "scorch-hot/**"
+      - "scripts/build.mjs"
+      - "wrangler.toml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            scorch-hot/package-lock.json
+      - name: Install and build scorch-hot
+        working-directory: scorch-hot
+        run: |
+          npm ci
+          npm run build
+      - name: Validate wrangler bundle
+        working-directory: scorch-hot
+        run: |
+          npm run deploy -- --dry-run
+          npm run upload -- --dry-run

@@ -1,0 +1,10 @@
+name = "scorch-hot-sectors"
+compatibility_date = "2025-03-01"
+main = "scorch-hot/worker/index.ts"
+
+[assets]
+directory = "./scorch-hot/dist"
+not_found_handling = "single-page-application"
+
+[vars]
+# Optional: set VAPID_PUBLIC_KEY in Cloudflare dashboard for push alerts
