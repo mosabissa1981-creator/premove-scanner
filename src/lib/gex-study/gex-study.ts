@@ -1,5 +1,11 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
 import {
+  gammaFlipFromSimulatedProfile,
+  mergeSimulatedProfileOntoBars,
+  simulateGammaProfile,
+  type OptionChainLeg,
+} from "@/lib/gex-study/gamma-profile-sim";
+import {
   computeGexLevelsFromUw,
   isRelevantGammaFlip,
   isSaneGammaFlip,
@@ -15,6 +21,7 @@ import type {
   UwGexLevels,
   UwGreekExposureExpiryRow,
   UwGreekExposureStrikeRow,
+  UwOptionChainRow,
   UwSpotExposureSnapshot,
   UwSpotExposureStrikeRow,
 } from "@/lib/unusualwhales/types";
@@ -878,6 +885,79 @@ function latestSpotNetGex(
   return Number.isNaN(net) ? null : net;
 }
 
+function normalizeIv(raw: number): number {
+  if (raw <= 0) return 0;
+  return raw > 3 ? raw / 100 : raw;
+}
+
+/** Map UW option-chain rows into simulation legs (OI > 0). */
+export function parseOptionChainLegs(
+  rows: (UwOptionChainRow | string)[],
+  expiryFilter?: string,
+  dteByExpiry?: Map<string, number>,
+): OptionChainLeg[] {
+  const legs: OptionChainLeg[] = [];
+
+  for (const row of rows) {
+    if (typeof row === "string") continue;
+
+    const strike = parseNum(String(row.strike ?? ""));
+    const oi = parseNum(String(row.open_interest ?? row.oi ?? ""));
+    if (strike <= 0 || oi <= 0) continue;
+
+    const expiry = (row.expiry ?? "").slice(0, 10);
+    if (expiryFilter && expiryFilter !== "all" && expiry && expiry !== expiryFilter) {
+      continue;
+    }
+
+    const typeRaw = (row.type ?? row.option_type ?? "C").toString().toUpperCase();
+    const type: "C" | "P" = typeRaw.startsWith("P") ? "P" : "C";
+    const iv = normalizeIv(
+      parseNum(String(row.iv ?? row.implied_volatility ?? row.volatility ?? "")),
+    );
+    const dte = (expiry && dteByExpiry?.get(expiry)) ?? row.dte ?? 0;
+
+    legs.push({ strike, type, oi, iv, expiry, dte });
+  }
+
+  return legs;
+}
+
+async function fetchOptionChainLegs(
+  client: UnusualWhalesClient,
+  ticker: string,
+  tradingDate: string,
+  expiryFilter: string | undefined,
+  expiryRows: UwGreekExposureExpiryRow[],
+): Promise<OptionChainLeg[]> {
+  try {
+    const res = (await client.optionChains(ticker, {
+      date: tradingDate,
+      greeks: true,
+    })) as UwDataResponse<(UwOptionChainRow | string)[]>;
+    const dteByExpiry = new Map(
+      expiryRows.map((row) => [expiryKey(row), row.dte] as const).filter(([key]) => Boolean(key)),
+    );
+    return parseOptionChainLegs(res.data ?? [], expiryFilter, dteByExpiry);
+  } catch {
+    return [];
+  }
+}
+
+function buildSimulatedChartStrikes(
+  bars: GexStrikePoint[],
+  legs: OptionChainLeg[],
+  stockPrice: number,
+): { strikes: GexStrikePoint[]; simulatedFlip: number | null } {
+  const profile = simulateGammaProfile(legs, stockPrice);
+  if (!profile.length) return { strikes: bars, simulatedFlip: null };
+
+  const simulatedFlip = gammaFlipFromSimulatedProfile(profile, stockPrice);
+  const windowed = filterStrikeWindow(bars, stockPrice);
+  const strikes = mergeSimulatedProfileOntoBars(windowed, profile);
+  return { strikes, simulatedFlip };
+}
+
 export async function fetchGexStudy(
   client: UnusualWhalesClient,
   ticker: string,
@@ -927,6 +1007,13 @@ export async function fetchGexStudy(
   }
 
   const expiryRows = exposureRes.data ?? [];
+  const chainLegs = await fetchOptionChainLegs(
+    client,
+    ticker,
+    tradingDate,
+    useAll ? undefined : expiry,
+    expiryRows,
+  );
   const availableExpiries = expiryRows
     .map((row) => ({ expiry: expiryKey(row), dte: row.dte }))
     .filter((row) => row.expiry)
@@ -953,9 +1040,19 @@ export async function fetchGexStudy(
     totals = summarizeStrikeSeries(fullSeries);
   }
 
-  const profileFlip =
+  const profileFlipFromBars =
     computeGammaFlipDeep(profileSource, stockPrice) ??
     computeGammaFlipFromWindow(profileSource, stockPrice);
+
+  let simulatedFlip: number | null = null;
+  let chartStrikes: GexStrikePoint[] | null = null;
+  if (chainLegs.length >= 8 && stockPrice != null && stockPrice > 0) {
+    const simulated = buildSimulatedChartStrikes(fullSeries, chainLegs, stockPrice);
+    simulatedFlip = simulated.simulatedFlip;
+    chartStrikes = simulated.strikes;
+  }
+
+  const profileFlip = simulatedFlip ?? profileFlipFromBars;
   const levels = levelsOiRes?.data
     ? computeGexLevelsFromUw(levelsOiRes.data, stockPrice ?? 0)
     : null;
@@ -1011,7 +1108,9 @@ export async function fetchGexStudy(
     putGex: totals.putGex,
     regime,
     flipDistancePct,
-    strikes: prepareChartStrikeSeries(fullSeries, stockPrice, gammaFlip, profileSource),
+    strikes:
+      chartStrikes ??
+      prepareChartStrikeSeries(fullSeries, stockPrice, gammaFlip, profileSource),
     availableExpiries,
   };
 }

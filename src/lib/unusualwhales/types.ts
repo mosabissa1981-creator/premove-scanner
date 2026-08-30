@@ -107,6 +107,20 @@ export interface UwGreekExposureStrikeRow {
   expiry?: string;
 }
 
+/** Enriched option chain row when `greeks=true` on `/option-chains`. */
+export interface UwOptionChainRow {
+  strike?: string | number;
+  expiry?: string;
+  type?: string;
+  option_type?: string;
+  open_interest?: string | number;
+  oi?: string | number;
+  iv?: string | number;
+  implied_volatility?: string | number;
+  volatility?: string | number;
+  dte?: number;
+}
+
 /** Spot gamma exposure per strike ($ / 1% move at current spot). */
 export interface UwSpotExposureStrikeRow {
   strike: string;
