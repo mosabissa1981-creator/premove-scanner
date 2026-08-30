@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { computeGexLevelsFromUw, resolveGammaFlip } from "@/lib/scoring/gex";
 
 describe("resolveGammaFlip", () => {
-  it("rejects deep OTM flips and uses the first sane nearby flip at or below spot", () => {
+  it("rejects deep OTM flips and uses the deepest sane flip at or below spot", () => {
     const flip = resolveGammaFlip(
       {
         gamma_flip: "4.5",
@@ -15,6 +15,21 @@ describe("resolveGammaFlip", () => {
       null,
     );
     expect(flip).toBeCloseTo(199.77, 1);
+  });
+
+  it("prefers the deeper primary flip over a nearer nearby flip (MSFT-style)", () => {
+    const flip = resolveGammaFlip(
+      {
+        gamma_flip: "404.27",
+        nearby_flips: ["492.51", "404.27"],
+        call_wall: "510",
+        put_wall: "500",
+        gamma_magnet: null,
+      },
+      513.15,
+      492.51,
+    );
+    expect(flip).toBeCloseTo(404.27, 1);
   });
 
   it("uses nearby_flips when primary flip is deep OTM", () => {
