@@ -107,6 +107,22 @@ describe("parseOptionChainLegs", () => {
     expect(legs[1]).toMatchObject({ strike: 275, type: "C", oi: 90_000, iv: 0.27, dte: 30 });
   });
 
+  it("parses option_symbol when strike/expiry are omitted", () => {
+    const legs = parseOptionChainLegs(
+      [
+        {
+          option_symbol: "AMZN250919P00250000",
+          open_interest: "42000",
+          implied_volatility: "0.29",
+        },
+      ],
+      undefined,
+      new Map([["2025-09-19", 20]]),
+    );
+    expect(legs).toHaveLength(1);
+    expect(legs[0]).toMatchObject({ strike: 250, type: "P", oi: 42_000, iv: 0.29, dte: 20 });
+  });
+
   it("filters by expiry when a single expiry is requested", () => {
     const legs = parseOptionChainLegs(
       [
@@ -492,6 +508,30 @@ describe("pickAllExpiryGammaFlip", () => {
     );
     expect(flip).toBeCloseTo(238.2, 1);
     expect(flip!).toBeLessThan(profileFlip);
+  });
+
+  it("uses the deepest vol flip when it is below the OI headline flip", () => {
+    const flip = pickAllExpiryGammaFlip(
+      248.42,
+      248.42,
+      null,
+      266.43,
+      {
+        call_wall: "275",
+        put_wall: "265",
+        gamma_flip: "248.42",
+        gamma_magnet: null,
+        nearby_flips: ["256.86"],
+      },
+      {
+        call_wall: "275",
+        put_wall: "265",
+        gamma_flip: "248.42",
+        gamma_magnet: null,
+        nearby_flips: ["238.20"],
+      },
+    );
+    expect(flip).toBeCloseTo(238.2, 1);
   });
 
   it("keeps profile and bar magnitudes aligned after chart prep", () => {

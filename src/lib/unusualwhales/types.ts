@@ -113,6 +113,8 @@ export interface UwOptionChainRow {
   expiry?: string;
   type?: string;
   option_type?: string;
+  option_symbol?: string;
+  symbol?: string;
   open_interest?: string | number;
   oi?: string | number;
   iv?: string | number;
@@ -165,6 +167,9 @@ export interface GexStudyResult {
   flipDistancePct: number | null;
   strikes: GexStrikePoint[];
   availableExpiries: { expiry: string; dte: number }[];
+  /** Whether the orange profile line came from BS simulation or bar fallback. */
+  profileSource: "simulated" | "bars";
+  chainLegCount: number;
 }
 
 export type GexExpiryMode = "daily" | "weekly" | "monthly" | "all";

@@ -7,6 +7,8 @@ import type { GexExpiryMode, UwDataResponse, UwGreekExposureExpiryRow } from "@/
 
 const EXPIRY_MODES = new Set<GexExpiryMode>(["daily", "weekly", "monthly", "all"]);
 
+export const maxDuration = 60;
+
 export async function GET(request: Request) {
   const cookieStore = await cookies();
   const apiKey = resolveApiKey(
