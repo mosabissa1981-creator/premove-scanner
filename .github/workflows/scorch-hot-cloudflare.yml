@@ -26,11 +26,13 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             scorch-hot/package-lock.json
-      - name: Install root dependencies
-        run: npm ci
-      - name: Build scorch-hot for Cloudflare
-        run: WORKERS_CI=1 npm run build
+      - name: Install and build scorch-hot
+        working-directory: scorch-hot
+        run: |
+          npm ci
+          npm run build
       - name: Validate wrangler bundle
-        run: npx wrangler deploy --dry-run
-      - name: Validate preview upload bundle
-        run: npx wrangler versions upload --dry-run
+        working-directory: scorch-hot
+        run: |
+          npx wrangler deploy --dry-run
+          npx wrangler versions upload --dry-run

@@ -9,7 +9,11 @@
     "preview": "vite preview",
     "test": "vitest run",
     "deploy": "wrangler deploy",
+    "upload": "wrangler versions upload",
     "pages:dev": "npm run build && wrangler pages dev dist --port 8788"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.4.1",

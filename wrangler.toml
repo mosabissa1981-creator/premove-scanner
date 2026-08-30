@@ -1,5 +1,5 @@
 name = "scorch-hot-sectors"
-compatibility_date = "2024-08-01"
+compatibility_date = "2025-03-01"
 main = "scorch-hot/worker/index.ts"
 
 [assets]
