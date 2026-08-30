@@ -386,6 +386,26 @@ describe("pickAllExpiryGammaFlip", () => {
     expect(flip).toBeCloseTo(238.2, 1);
   });
 
+  it("selects OI flip 238 for AMZN when profile zero crossing is near 263", () => {
+    const profileFlip = 263.54;
+    const spot = 266.43;
+    const flip = pickAllExpiryGammaFlip(
+      profileFlip,
+      256.86,
+      null,
+      spot,
+      {
+        call_wall: "275",
+        put_wall: "265",
+        gamma_flip: "256.86",
+        gamma_magnet: null,
+        nearby_flips: ["238.20", "256.86"],
+      },
+    );
+    expect(flip).toBeCloseTo(238.2, 1);
+    expect(flip!).toBeLessThan(profileFlip);
+  });
+
   it("keeps the deeper NVDA flip when both profile and OI are valid", () => {
     const flip = pickAllExpiryGammaFlip(216.43, 199.77, null, 217.55);
     expect(flip).toBeCloseTo(199.77, 1);
