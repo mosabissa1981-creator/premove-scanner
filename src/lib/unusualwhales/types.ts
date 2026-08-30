@@ -97,6 +97,15 @@ export interface UwGreekExposureStrikeRow {
   expiry?: string;
 }
 
+/** Spot gamma exposure per strike ($ / 1% move at current spot). */
+export interface UwSpotExposureStrikeRow {
+  strike: string;
+  call_gamma_oi: string;
+  put_gamma_oi: string;
+  price?: string;
+  expiry?: string;
+}
+
 export interface GexStrikePoint {
   strike: number;
   callGex: number;

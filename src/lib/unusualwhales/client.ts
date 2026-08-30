@@ -187,6 +187,27 @@ export class UnusualWhalesClient {
     return this.get(`/api/stock/${ticker}/greek-exposure/strike-expiry`, { expiry }, 120_000);
   }
 
+  spotExposureByStrike(
+    ticker: string,
+    params: { minStrike?: number; maxStrike?: number; page?: number; limit?: number } = {},
+  ) {
+    return this.get(`/api/stock/${ticker}/spot-exposures/strike`, {
+      min_strike: params.minStrike,
+      max_strike: params.maxStrike,
+      page: params.page,
+      limit: params.limit ?? 500,
+    }, 120_000);
+  }
+
+  spotExposureByExpiryStrike(ticker: string, expirations: string[]) {
+    const url = new URL(`${BASE_URL}/api/stock/${ticker}/spot-exposures/expiry-strike`);
+    for (const expiry of expirations) {
+      url.searchParams.append("expirations[]", expiry);
+    }
+    url.searchParams.set("limit", "500");
+    return this.request(url.toString());
+  }
+
   darkpool(ticker: string, days = 5) {
     const newerThan = new Date();
     newerThan.setDate(newerThan.getDate() - days);
