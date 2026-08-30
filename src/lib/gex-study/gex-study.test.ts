@@ -406,6 +406,22 @@ describe("pickAllExpiryGammaFlip", () => {
     expect(flip!).toBeLessThan(profileFlip);
   });
 
+  it("keeps profile and bar magnitudes aligned after chart prep", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "200", call_gamma_oi: "0", put_gamma_oi: "-50000000" },
+      { strike: "240", call_gamma_oi: "0", put_gamma_oi: "-20000000" },
+      { strike: "260", call_gamma_oi: "100000000", put_gamma_oi: "0" },
+      { strike: "275", call_gamma_oi: "150000000", put_gamma_oi: "0" },
+    ];
+    const series = buildStrikeSeries(rows, 266);
+    const profileSource = buildProfileSourceSeries(rows);
+    const chart = prepareChartStrikeSeries(series, 266, 238.2, profileSource);
+    const maxBar = Math.max(...chart.map((point) => Math.abs(point.netGex)));
+    const maxProfile = Math.max(...chart.map((point) => Math.abs(point.profile)));
+    expect(maxProfile).toBeGreaterThan(maxBar * 0.01);
+    expect(maxProfile).toBeLessThan(maxBar * 1000);
+  });
+
   it("keeps the deeper NVDA flip when both profile and OI are valid", () => {
     const flip = pickAllExpiryGammaFlip(216.43, 199.77, null, 217.55);
     expect(flip).toBeCloseTo(199.77, 1);
