@@ -477,7 +477,27 @@ export function prepareChartStrikeSeries(
   profileSource?: GexStrikePoint[],
 ): GexStrikePoint[] {
   if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
-  return buildChartCumulativeProfile(points, stockPrice, profileSource);
+  return buildCumulativeProfileAtFlip(points, stockPrice, gammaFlip, profileSource);
+}
+
+function parseGexLevel(value: string | null | undefined): number | null {
+  if (value == null || value === "") return null;
+  const n = parseFloat(value);
+  return Number.isNaN(n) ? null : n;
+}
+
+/** Collect OI gamma flips from UW levels (primary + nearby). */
+export function collectRelevantOiFlips(
+  levels: UwGexLevels | null | undefined,
+  stockPrice: number,
+): number[] {
+  const candidates = [levels?.gamma_flip, ...(levels?.nearby_flips ?? [])];
+  return candidates
+    .map(parseGexLevel)
+    .filter(
+      (flip): flip is number =>
+        flip != null && isRelevantGammaFlip(flip, stockPrice) && flip <= stockPrice + 1e-6,
+    );
 }
 
 /** All-expiry flip: profile when reliable, OI gamma_flip, deeper vol flip for MSFT-style. */
@@ -486,6 +506,7 @@ export function pickAllExpiryGammaFlip(
   oiFlip: number | null,
   volFlip: number | null,
   stockPrice: number,
+  oiLevels?: UwGexLevels | null,
 ): number | null {
   const relevant = (flip: number | null | undefined): number | null =>
     flip != null && stockPrice > 0 && isRelevantGammaFlip(flip, stockPrice) && flip <= stockPrice + 1e-6
@@ -493,8 +514,15 @@ export function pickAllExpiryGammaFlip(
       : null;
 
   const profile = relevant(profileFlip);
-  const oi = relevant(oiFlip);
+  const oiFlips = collectRelevantOiFlips(oiLevels, stockPrice);
+  const oiDeep = oiFlips.length ? Math.min(...oiFlips) : null;
+  const oi = relevant(oiFlip) ?? oiDeep;
   const vol = relevant(volFlip);
+
+  if (profile && oiDeep && oiDeep < profile && profile - oiDeep > stockPrice * 0.03) {
+    if (vol && vol < oiDeep && (oiDeep - vol) / stockPrice > 0.05) return vol;
+    return oiDeep;
+  }
 
   if (profile && oi) {
     if (profile < stockPrice * 0.75 && oi > profile) return oi;
@@ -608,6 +636,20 @@ export function resolveStudyExpiry(
   if (!selected.length) return "all";
   const key = expiryKey(selected[0]);
   return key || "all";
+}
+
+function greekRowsNeedSpotScale(rows: UwSpotExposureStrikeRow[]): boolean {
+  let sum = 0;
+  let count = 0;
+  for (const row of rows.slice(0, 40)) {
+    const mag = Math.abs(parseNum(row.call_gamma_oi)) + Math.abs(parseNum(row.put_gamma_oi));
+    if (mag > 0) {
+      sum += mag;
+      count += 1;
+    }
+  }
+  if (!count) return false;
+  return sum / count < 50_000;
 }
 
 function scaleGreekRowsToSpotGex(
@@ -731,6 +773,27 @@ async function fetchAllSpotExposures(
   return fetchSpotByExpiryAggregation(client, ticker, expiries, tradingDate);
 }
 
+async function fetchGreekStrikeRows(
+  client: UnusualWhalesClient,
+  ticker: string,
+  expiry: string | undefined,
+): Promise<UwSpotExposureStrikeRow[]> {
+  const greekRes = expiry
+    ? ((await client.greekExposureByStrikeExpiry(
+        ticker,
+        expiry,
+      )) as UwDataResponse<UwGreekExposureStrikeRow[]>)
+    : ((await client.greekExposureByStrike(ticker)) as UwDataResponse<
+        UwGreekExposureStrikeRow[]
+      >);
+
+  return (greekRes.data ?? []).map((row) => ({
+    strike: row.strike,
+    call_gamma_oi: row.call_gex,
+    put_gamma_oi: row.put_gex,
+  }));
+}
+
 async function fetchStrikeRowsWithFallback(
   client: UnusualWhalesClient,
   ticker: string,
@@ -741,6 +804,12 @@ async function fetchStrikeRowsWithFallback(
     stockPrice: number | null;
   },
 ): Promise<{ rows: UwSpotExposureStrikeRow[]; source: "spot" | "greek" }> {
+  const greekRows = await fetchGreekStrikeRows(client, ticker, expiry);
+
+  if (!expiry && hasUsableSpotStrikes(greekRows)) {
+    return { rows: greekRows, source: "greek" };
+  }
+
   const spotRows = await fetchAllSpotExposures(client, ticker, {
     expiry,
     tradingDate: options.tradingDate,
@@ -749,23 +818,9 @@ async function fetchStrikeRowsWithFallback(
   });
   if (hasUsableSpotStrikes(spotRows)) return { rows: spotRows, source: "spot" };
 
-  const greekRes = expiry
-    ? ((await client.greekExposureByStrikeExpiry(
-        ticker,
-        expiry,
-      )) as UwDataResponse<UwGreekExposureStrikeRow[]>)
-    : ((await client.greekExposureByStrike(ticker)) as UwDataResponse<
-        UwGreekExposureStrikeRow[]
-      >);
+  if (hasUsableSpotStrikes(greekRows)) return { rows: greekRows, source: "greek" };
 
-  return {
-    rows: (greekRes.data ?? []).map((row) => ({
-      strike: row.strike,
-      call_gamma_oi: row.call_gex,
-      put_gamma_oi: row.put_gex,
-    })),
-    source: "greek",
-  };
+  return { rows: [], source: "greek" };
 }
 
 function latestSpotSnapshot(
@@ -835,7 +890,9 @@ export async function fetchGexStudy(
 
   let strikeRows = strikePayload.rows;
   if (strikePayload.source === "greek" && stockPrice != null && stockPrice > 0) {
-    strikeRows = scaleGreekRowsToSpotGex(strikeRows, stockPrice);
+    if (greekRowsNeedSpotScale(strikeRows)) {
+      strikeRows = scaleGreekRowsToSpotGex(strikeRows, stockPrice);
+    }
   }
 
   const expiryRows = exposureRes.data ?? [];
@@ -884,7 +941,7 @@ export async function fetchGexStudy(
     volFlip != null && spot > 0 && isRelevantGammaFlip(volFlip, spot) ? volFlip : null;
 
   let gammaFlip = useAll
-    ? pickAllExpiryGammaFlip(saneProfileFlip, saneOiFlip, saneVolFlip, spot)
+    ? pickAllExpiryGammaFlip(saneProfileFlip, saneOiFlip, saneVolFlip, spot, levelsOiRes?.data)
     : (saneProfileFlip ?? computeGammaFlip(fullSeries, stockPrice));
 
   if (gammaFlip != null && spot > 0 && !isSaneGammaFlip(gammaFlip, spot)) {

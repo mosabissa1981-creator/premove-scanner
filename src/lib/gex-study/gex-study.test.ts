@@ -276,7 +276,7 @@ describe("computeNetGexBarFlip", () => {
 });
 
 describe("prepareChartStrikeSeries", () => {
-  it("uses raw cumulative profile that crosses zero at gamma flip", () => {
+  it("rebases profile to zero at gamma flip for OptionCharts-style display", () => {
     const rows: UwSpotExposureStrikeRow[] = [
       { strike: "240", call_gamma_oi: "0", put_gamma_oi: "-100" },
       { strike: "250", call_gamma_oi: "0", put_gamma_oi: "-50" },
@@ -297,7 +297,7 @@ describe("prepareChartStrikeSeries", () => {
     expect(above).toBeGreaterThan(0);
   });
 
-  it("keeps negative profile below flip on raw cumulative data", () => {
+  it("keeps negative profile below flip after rebase", () => {
     const rows: UwSpotExposureStrikeRow[] = [
       { strike: "330", call_gamma_oi: "0", put_gamma_oi: "-100" },
       { strike: "340", call_gamma_oi: "0", put_gamma_oi: "-50" },
@@ -351,6 +351,17 @@ describe("pickAllExpiryGammaFlip", () => {
   it("prefers the deeper vol flip for MSFT when OI profile is nearer to spot", () => {
     const flip = pickAllExpiryGammaFlip(492.51, 492.51, 404.27, 513.15);
     expect(flip).toBeCloseTo(404.27, 1);
+  });
+
+  it("prefers a deeper nearby OI flip for AMZN-style charts", () => {
+    const flip = pickAllExpiryGammaFlip(263, 256.86, null, 266.43, {
+      call_wall: "275",
+      put_wall: "250",
+      gamma_flip: "256.86",
+      gamma_magnet: null,
+      nearby_flips: ["238.20", "256.86"],
+    });
+    expect(flip).toBeCloseTo(238.2, 1);
   });
 
   it("keeps the deeper NVDA flip when both profile and OI are valid", () => {
