@@ -5,6 +5,7 @@ import {
   computeGammaFlipFromWindow,
   computeWallsFromSeries,
   filterStrikeWindow,
+  rebaseProfileWindow,
   summarizeStrikeSeries,
 } from "@/lib/gex-study/gex-study";
 import type { UwSpotExposureStrikeRow } from "@/lib/unusualwhales/types";
@@ -84,6 +85,31 @@ describe("computeGammaFlipFromWindow", () => {
     expect(flip!).toBeGreaterThan(190);
     expect(flip!).toBeLessThan(205);
   });
+
+  it("ignores deep-OTM chain history by rebasing the profile in-window", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "5", call_gamma_oi: "0", put_gamma_oi: "-1000" },
+      { strike: "10", call_gamma_oi: "5000", put_gamma_oi: "0" },
+      { strike: "150", call_gamma_oi: "100", put_gamma_oi: "-50" },
+      { strike: "180", call_gamma_oi: "50", put_gamma_oi: "-200" },
+      { strike: "195", call_gamma_oi: "20", put_gamma_oi: "-80" },
+      { strike: "200", call_gamma_oi: "300", put_gamma_oi: "-20" },
+      { strike: "210", call_gamma_oi: "400", put_gamma_oi: "0" },
+      { strike: "220", call_gamma_oi: "200", put_gamma_oi: "-10" },
+      { strike: "230", call_gamma_oi: "100", put_gamma_oi: "-5" },
+    ];
+    const series = buildStrikeSeries(rows);
+    expect(computeGammaFlip(series, 217.55)).toBeLessThan(20);
+
+    const rebased = rebaseProfileWindow(series, 217.55);
+    expect(rebased.some((point) => point.profile < 0)).toBe(true);
+    expect(rebased.some((point) => point.profile > 0)).toBe(true);
+
+    const flip = computeGammaFlipFromWindow(series, 217.55);
+    expect(flip).not.toBeNull();
+    expect(flip!).toBeGreaterThan(180);
+    expect(flip!).toBeLessThan(215);
+  });
 });
 
 describe("computeWallsFromSeries", () => {
@@ -106,6 +132,20 @@ describe("filterStrikeWindow", () => {
     const visible = filterStrikeWindow(series, 64, 0.2);
     expect(visible.length).toBeGreaterThan(0);
     expect(visible.every((p) => p.strike >= 51.2 && p.strike <= 76.8)).toBe(true);
+  });
+
+  it("keeps a tight band around spot even with fewer than eight strikes", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "200", call_gamma_oi: "100", put_gamma_oi: "-50" },
+      { strike: "210", call_gamma_oi: "100", put_gamma_oi: "-50" },
+      { strike: "220", call_gamma_oi: "100", put_gamma_oi: "-50" },
+      { strike: "230", call_gamma_oi: "100", put_gamma_oi: "-50" },
+      { strike: "240", call_gamma_oi: "100", put_gamma_oi: "-50" },
+    ];
+    const series = buildStrikeSeries(rows);
+    const visible = filterStrikeWindow(series, 217.55, 0.1);
+    expect(visible.length).toBe(4);
+    expect(visible[0].strike).toBe(200);
   });
 });
 

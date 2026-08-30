@@ -1,5 +1,5 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
-import { computeGexLevelsFromUw, resolveGammaFlip } from "@/lib/scoring/gex";
+import { computeGexLevelsFromUw, isSaneGammaFlip, resolveGammaFlip } from "@/lib/scoring/gex";
 import { expiryKey, selectExpiryRows } from "@/lib/gex-scan/gex-scan";
 import type {
   GexExpiryMode,
@@ -63,7 +63,7 @@ export function filterStrikeWindow(
   const minStrike = stockPrice * (1 - paddingPct);
   const maxStrike = stockPrice * (1 + paddingPct);
   const filtered = points.filter((p) => p.strike >= minStrike && p.strike <= maxStrike);
-  if (filtered.length >= 8) return filtered;
+  if (filtered.length >= 4) return filtered;
 
   const centerIdx = points.reduce(
     (best, p, i) =>
@@ -115,6 +115,19 @@ function interpolateRisingCrossing(prev: GexStrikePoint, curr: GexStrikePoint): 
   return prev.strike + ratio * (curr.strike - prev.strike);
 }
 
+/** Recompute cumulative profile from zero at the window start (drops deep-OTM history). */
+export function rebaseProfileWindow(
+  points: GexStrikePoint[],
+  stockPrice: number | null,
+): GexStrikePoint[] {
+  const window = filterStrikeWindow(points, stockPrice);
+  let cumulative = 0;
+  return window.map((point) => {
+    cumulative += point.netGex;
+    return { ...point, profile: cumulative };
+  });
+}
+
 /** Rising zero crossing below spot inside the near-ATM strike window. */
 export function computeGammaFlipFromWindow(
   points: GexStrikePoint[],
@@ -122,7 +135,7 @@ export function computeGammaFlipFromWindow(
 ): number | null {
   if (!points.length || stockPrice == null || stockPrice <= 0) return null;
 
-  const window = filterStrikeWindow(points, stockPrice);
+  const window = rebaseProfileWindow(points, stockPrice);
   const minStrike = stockPrice * 0.45;
 
   for (let i = window.length - 1; i >= 1; i--) {
@@ -138,6 +151,13 @@ export function computeGammaFlipFromWindow(
     (crossing) => crossing.strike >= minStrike && crossing.strike <= stockPrice + 1e-6,
   );
   if (!crossings.length) return null;
+
+  const belowSpot = crossings.filter((crossing) => crossing.strike <= stockPrice + 1e-6);
+  if (belowSpot.length) {
+    return belowSpot.reduce((best, crossing) =>
+      crossing.strike > best.strike ? crossing : best,
+    ).strike;
+  }
 
   return crossings.reduce((best, crossing) =>
     Math.abs(crossing.strike - stockPrice) < Math.abs(best.strike - stockPrice)
@@ -313,10 +333,23 @@ async function fetchStrikeRowsWithFallback(
   }));
 }
 
+function latestSpotSnapshot(
+  snapshots: UwSpotExposureSnapshot[] | undefined,
+): UwSpotExposureSnapshot | null {
+  if (!snapshots?.length) return null;
+  return snapshots.reduce((latest, row) => {
+    if (!latest) return row;
+    const latestTime = Date.parse(latest.time);
+    const rowTime = Date.parse(row.time);
+    if (Number.isNaN(latestTime) || Number.isNaN(rowTime)) return row;
+    return rowTime >= latestTime ? row : latest;
+  });
+}
+
 function latestSpotNetGex(
   snapshots: UwSpotExposureSnapshot[] | undefined,
 ): number | null {
-  const latest = snapshots?.[0];
+  const latest = latestSpotSnapshot(snapshots);
   if (!latest?.gamma_per_one_percent_move_oi) return null;
   const net = parseFloat(latest.gamma_per_one_percent_move_oi);
   return Number.isNaN(net) ? null : net;
@@ -361,6 +394,7 @@ export async function fetchGexStudy(
   }
 
   const profileFlip = computeGammaFlipFromWindow(fullSeries, stockPrice);
+  const levelsFlip = resolveGammaFlip(levelsRes?.data, stockPrice ?? 0, null);
   const levels = levelsRes?.data
     ? computeGexLevelsFromUw(levelsRes.data, stockPrice ?? 0)
     : null;
@@ -368,9 +402,15 @@ export async function fetchGexStudy(
   let callWall = levels?.callWall ?? null;
   let putWall = levels?.putWall ?? null;
   let gammaMagnet = levels?.gammaMagnet ?? null;
+  const spot = stockPrice ?? 0;
+  const saneProfileFlip =
+    profileFlip != null && spot > 0 && isSaneGammaFlip(profileFlip, spot) ? profileFlip : null;
+  const saneLevelsFlip =
+    levelsFlip != null && spot > 0 && isSaneGammaFlip(levelsFlip, spot) ? levelsFlip : null;
+
   let gammaFlip = useAll
-    ? resolveGammaFlip(levelsRes?.data, stockPrice ?? 0, profileFlip)
-    : (profileFlip ?? computeGammaFlip(fullSeries, stockPrice));
+    ? (saneProfileFlip ?? saneLevelsFlip)
+    : (saneProfileFlip ?? computeGammaFlip(fullSeries, stockPrice));
 
   if (!useAll) {
     const walls = computeWallsFromSeries(fullSeries, stockPrice);
