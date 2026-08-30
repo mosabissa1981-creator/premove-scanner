@@ -159,6 +159,27 @@ export class UnusualWhalesClient {
     return promise;
   }
 
+  /** Cache market data, but never persist an empty `data` array for spot GEX endpoints. */
+  private getCachedWhenNonEmpty<T>(
+    path: string,
+    params: Record<string, string | number | boolean | undefined> = {},
+    ttlMs = 0,
+  ): Promise<T> {
+    const url = this.buildUrl(path, params);
+    const promise = this.request<T>(url).then((body) => {
+      const data = (body as { data?: unknown[] })?.data;
+      if (Array.isArray(data) && data.length > 0 && ttlMs > 0) {
+        responseCache.set(url, {
+          promise: Promise.resolve(body),
+          expires: Date.now() + ttlMs,
+        });
+        pruneCache();
+      }
+      return body;
+    });
+    return promise;
+  }
+
   stockScreener(params: Record<string, string | number | boolean | undefined> = {}) {
     return this.get("/api/screener/stocks", params);
   }
@@ -191,7 +212,7 @@ export class UnusualWhalesClient {
     ticker: string,
     params: { minStrike?: number; maxStrike?: number; page?: number; limit?: number } = {},
   ) {
-    return this.get(`/api/stock/${ticker}/spot-exposures/strike`, {
+    return this.getCachedWhenNonEmpty(`/api/stock/${ticker}/spot-exposures/strike`, {
       min_strike: params.minStrike,
       max_strike: params.maxStrike,
       page: params.page,
@@ -200,7 +221,7 @@ export class UnusualWhalesClient {
   }
 
   spotExposures(ticker: string) {
-    return this.get(`/api/stock/${ticker}/spot-exposures`, {}, 120_000);
+    return this.getCachedWhenNonEmpty(`/api/stock/${ticker}/spot-exposures`, {}, 120_000);
   }
 
   spotExposureByExpiryStrike(ticker: string, expirations: string[]) {
