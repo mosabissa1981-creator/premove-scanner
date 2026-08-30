@@ -48,6 +48,127 @@ function flipBadge(row: GexScanRow): { label: string; className: string } {
   };
 }
 
+function rowBackground(row: GexScanRow): string {
+  const tier = tierClass(row);
+  if (row.regime === "positive") return "bg-emerald-500/5";
+  if (row.regime === "negative") return "bg-red-500/5";
+  if (tier === "tier-call-hi") return "bg-emerald-500/20";
+  if (tier === "tier-call-mid") return "bg-emerald-500/10";
+  if (tier === "tier-call-lo") return "bg-emerald-500/5";
+  if (tier === "tier-put-hi") return "bg-red-500/20";
+  if (tier === "tier-put-mid") return "bg-red-500/10";
+  if (tier === "tier-put-lo") return "bg-red-500/5";
+  return "";
+}
+
+function GexScanResults({ rows }: { rows: GexScanRow[] }) {
+  return (
+    <>
+      <div className="space-y-2 sm:hidden">
+        {rows.map((row) => {
+          const badge = flipBadge(row);
+          const { callHeavy } = gexSides(row);
+          return (
+            <article
+              key={row.ticker}
+              className={`rounded-xl border border-zinc-800 p-3 ${rowBackground(row)}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-base font-bold">{row.ticker}</div>
+                  <span
+                    className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge.className}`}
+                  >
+                    {badge.label}
+                  </span>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-[10px] uppercase tracking-wide text-zinc-500">Net GEX</div>
+                  <div className={`text-sm font-semibold ${cls(row.netGex)}`}>{formatMoney(row.netGex)}</div>
+                </div>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <div className="text-zinc-500">Now</div>
+                  <div className="font-medium text-zinc-200">{formatPrice(row.stockPrice)}</div>
+                </div>
+                <div>
+                  <div className="text-zinc-500">Flip</div>
+                  <div className="font-medium text-zinc-200">{formatPrice(row.gammaFlip)}</div>
+                </div>
+                <div>
+                  <div className="text-zinc-500">Distance</div>
+                  <div className={row.regime === "positive" ? "text-emerald-400" : row.regime === "negative" ? "text-red-400" : "text-zinc-400"}>
+                    {row.flipDistancePct != null
+                      ? `${row.flipDistancePct >= 0 ? "+" : ""}${row.flipDistancePct.toFixed(1)}%`
+                      : "—"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-zinc-500">Call : Put</div>
+                  <div className={`font-bold ${callHeavy ? "text-emerald-400" : "text-red-400"}`}>{row.ratio}</div>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-xl border border-zinc-800 sm:block">
+        <table className="w-full min-w-[720px] border-collapse text-sm tabular-nums">
+          <thead>
+            <tr className="border-b border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500">
+              <th className="px-3 py-3">Symbol</th>
+              <th className="px-3 py-3">Price vs flip</th>
+              <th className="px-3 py-3 text-right">Net GEX</th>
+              <th className="px-3 py-3 text-right">Call GEX</th>
+              <th className="px-3 py-3 text-right">Put GEX</th>
+              <th className="px-3 py-3">Call : Put</th>
+              <th className="hidden px-3 py-3 md:table-cell">Walls</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const { callHeavy } = gexSides(row);
+              const badge = flipBadge(row);
+              return (
+                <tr key={row.ticker} className={`border-b border-zinc-800/80 ${rowBackground(row)}`}>
+                  <td className="px-3 py-3 font-semibold">{row.ticker}</td>
+                  <td className="px-3 py-3">
+                    <span
+                      className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge.className}`}
+                    >
+                      {badge.label}
+                    </span>
+                    <div className="mt-1 text-xs text-zinc-400">Now {formatPrice(row.stockPrice)}</div>
+                    <div className="text-xs text-zinc-500">
+                      Flip {formatPrice(row.gammaFlip)}
+                      {row.flipDistancePct != null
+                        ? ` · ${row.flipDistancePct >= 0 ? "+" : ""}${row.flipDistancePct.toFixed(1)}%`
+                        : ""}
+                    </div>
+                  </td>
+                  <td className={`px-3 py-3 text-right font-semibold ${cls(row.netGex)}`}>
+                    {formatMoney(row.netGex)}
+                  </td>
+                  <td className={`px-3 py-3 text-right ${cls(row.callGex)}`}>{formatMoney(row.callGex)}</td>
+                  <td className={`px-3 py-3 text-right ${cls(row.putGex)}`}>{formatMoney(row.putGex)}</td>
+                  <td className={`px-3 py-3 font-bold ${callHeavy ? "text-emerald-400" : "text-red-400"}`}>
+                    {row.ratio}
+                  </td>
+                  <td className="hidden px-3 py-3 text-zinc-400 md:table-cell">
+                    {row.callWall ?? "—"} / {row.putWall ?? "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 export default function GexScanPage() {
   const { apiKey, hasKey } = useApiKey();
   const [tickers, setTickers] = useState(DEFAULT_TICKERS);
@@ -267,84 +388,7 @@ export default function GexScanPage() {
                 : "No tickers at that Call:Put ratio."}
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-zinc-800">
-              <table className="w-full min-w-[720px] border-collapse text-sm tabular-nums">
-                <thead>
-                  <tr className="border-b border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500">
-                    <th className="px-3 py-3">Symbol</th>
-                    <th className="px-3 py-3">Price vs flip</th>
-                    <th className="px-3 py-3 text-right">Net GEX</th>
-                    <th className="hidden px-3 py-3 text-right sm:table-cell">Call GEX</th>
-                    <th className="hidden px-3 py-3 text-right sm:table-cell">Put GEX</th>
-                    <th className="px-3 py-3">Call : Put</th>
-                    <th className="hidden px-3 py-3 md:table-cell">Walls</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((row) => {
-                    const { callHeavy } = gexSides(row);
-                    const tier = tierClass(row);
-                    const badge = flipBadge(row);
-                    const rowBg =
-                      row.regime === "positive"
-                        ? "bg-emerald-500/5"
-                        : row.regime === "negative"
-                          ? "bg-red-500/5"
-                          : tier === "tier-call-hi"
-                            ? "bg-emerald-500/20"
-                            : tier === "tier-call-mid"
-                              ? "bg-emerald-500/10"
-                              : tier === "tier-call-lo"
-                                ? "bg-emerald-500/5"
-                                : tier === "tier-put-hi"
-                                  ? "bg-red-500/20"
-                                  : tier === "tier-put-mid"
-                                    ? "bg-red-500/10"
-                                    : tier === "tier-put-lo"
-                                      ? "bg-red-500/5"
-                                      : "";
-                    return (
-                      <tr key={row.ticker} className={`border-b border-zinc-800/80 ${rowBg}`}>
-                        <td className="px-3 py-3 font-semibold">{row.ticker}</td>
-                        <td className="px-3 py-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badge.className}`}
-                            >
-                              {badge.label}
-                            </span>
-                          </div>
-                          <div className="mt-1 text-xs text-zinc-400">
-                            Now {formatPrice(row.stockPrice)}
-                          </div>
-                          <div className="text-xs text-zinc-500">
-                            Flip {formatPrice(row.gammaFlip)}
-                            {row.flipDistancePct != null
-                              ? ` · ${row.flipDistancePct >= 0 ? "+" : ""}${row.flipDistancePct.toFixed(1)}%`
-                              : ""}
-                          </div>
-                        </td>
-                        <td className={`px-3 py-3 text-right font-semibold ${cls(row.netGex)}`}>
-                          {formatMoney(row.netGex)}
-                        </td>
-                        <td className={`hidden px-3 py-3 text-right sm:table-cell ${cls(row.callGex)}`}>
-                          {formatMoney(row.callGex)}
-                        </td>
-                        <td className={`hidden px-3 py-3 text-right sm:table-cell ${cls(row.putGex)}`}>
-                          {formatMoney(row.putGex)}
-                        </td>
-                        <td className={`px-3 py-3 font-bold ${callHeavy ? "text-emerald-400" : "text-red-400"}`}>
-                          {row.ratio}
-                        </td>
-                        <td className="hidden px-3 py-3 text-zinc-400 md:table-cell">
-                          {row.callWall ?? "—"} / {row.putWall ?? "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <GexScanResults rows={visible} />
           )}
 
           {result.errors.length > 0 && (
