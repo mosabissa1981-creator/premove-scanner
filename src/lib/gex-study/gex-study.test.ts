@@ -353,6 +353,17 @@ describe("pickAllExpiryGammaFlip", () => {
     expect(flip).toBeCloseTo(404.27, 1);
   });
 
+  it("prefers a deeper nearby OI flip for AMZN-style charts", () => {
+    const flip = pickAllExpiryGammaFlip(263, 256.86, null, 266.43, {
+      call_wall: "275",
+      put_wall: "250",
+      gamma_flip: "256.86",
+      gamma_magnet: null,
+      nearby_flips: ["238.20", "256.86"],
+    });
+    expect(flip).toBeCloseTo(238.2, 1);
+  });
+
   it("keeps the deeper NVDA flip when both profile and OI are valid", () => {
     const flip = pickAllExpiryGammaFlip(216.43, 199.77, null, 217.55);
     expect(flip).toBeCloseTo(199.77, 1);
