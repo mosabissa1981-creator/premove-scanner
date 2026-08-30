@@ -67,8 +67,8 @@ npm run deploy
 
 1. Merge the `scorch-hot/` folder into `premove-scanner` (or keep on a branch)
 2. Connect Cloudflare to `premove-scanner` with **Root directory** = `scorch-hot`
-3. Build command: `npm run build` · Deploy command: `npm run deploy` (or `npx wrangler deploy` when root is `scorch-hot`)
-4. **Branch control:** enable “Builds for non-production branches” so PR checks run preview builds
+3. Build command: `npm run build` · Deploy command: `npm run deploy` · Version command: `npm run upload`
+4. **Branch control:** enable “Builds for non-production branches” for PR preview builds
 
 Future pushes auto-deploy — no more manual `wrangler deploy`.
 

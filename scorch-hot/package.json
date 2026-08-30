@@ -8,8 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "deploy": "wrangler deploy",
-    "upload": "wrangler versions upload",
+    "deploy": "npm run build && wrangler deploy",
+    "upload": "npm run build && wrangler versions upload",
     "pages:dev": "npm run build && wrangler pages dev dist --port 8788"
   },
   "engines": {
