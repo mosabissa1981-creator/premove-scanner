@@ -35,6 +35,22 @@ function SleeveCard({ row }: { row: SleeveRow }) {
       <div className="heatbar-wrap" aria-hidden>
         <div className="heatbar" style={{ width: `${heatWidth(row.heat)}%` }} />
       </div>
+      {row.topMovers.length > 0 && (
+        <div className="sleeve-movers">
+          {row.topMovers.map((stock) => (
+            <span key={stock.ticker} className={`sleeve-mover ${stock.change1d >= 0 ? "up" : "down"}`}>
+              <strong>{stock.ticker}</strong> {fmtPct(stock.change1d)}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="sleeve-tickers" aria-label={`${row.name} holdings`}>
+        {row.names.map((ticker) => (
+          <span key={ticker} className="sleeve-ticker">
+            {ticker}
+          </span>
+        ))}
+      </div>
       <div className="sleeve-foot">
         <span>Heat {row.heat.toFixed(2)}</span>
         <span>1M {fmtPct(row.change1m)}</span>
