@@ -1,5 +1,6 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
 import {
+  dedupeChainLegs,
   gammaFlipFromSimulatedProfile,
   mergeSimulatedProfileOntoBars,
   simulateGammaProfile,
@@ -22,6 +23,7 @@ import type {
   UwGreekExposureExpiryRow,
   UwGreekExposureStrikeRow,
   UwOptionChainRow,
+  UwOptionContractRow,
   UwSpotExposureSnapshot,
   UwSpotExposureStrikeRow,
 } from "@/lib/unusualwhales/types";
@@ -890,6 +892,22 @@ function normalizeIv(raw: number): number {
   return raw > 3 ? raw / 100 : raw;
 }
 
+/** Parse OSI option symbol into strike, type, and expiry. */
+export function parseOsiOptionSymbol(symbol: string): {
+  type: "C" | "P";
+  strike: number;
+  expiry: string;
+} | null {
+  const match = symbol.match(/^([A-Z]+)(\d{2})(\d{2})(\d{2})([CP])(\d{8})$/);
+  if (!match) return null;
+  const [, , yy, mm, dd, cp, strikeRaw] = match;
+  return {
+    type: cp === "P" ? "P" : "C",
+    strike: parseInt(strikeRaw, 10) / 1000,
+    expiry: `20${yy}-${mm}-${dd}`,
+  };
+}
+
 /** Map UW option-chain rows into simulation legs (OI > 0). */
 export function parseOptionChainLegs(
   rows: (UwOptionChainRow | string)[],
@@ -923,6 +941,62 @@ export function parseOptionChainLegs(
   return legs;
 }
 
+/** Map paginated option-contract rows into per-contract simulation legs. */
+export function parseOptionContractRows(
+  rows: UwOptionContractRow[],
+  expiryFilter?: string,
+  dteByExpiry?: Map<string, number>,
+): OptionChainLeg[] {
+  const legs: OptionChainLeg[] = [];
+
+  for (const row of rows) {
+    const parsed = parseOsiOptionSymbol(row.option_symbol ?? "");
+    const oi = parseNum(String(row.open_interest ?? ""));
+    if (oi <= 0) continue;
+
+    const strike = parseNum(String(row.strike ?? "")) || parsed?.strike || 0;
+    const expiry = (row.expiry ?? parsed?.expiry ?? "").slice(0, 10);
+    const type = parsed?.type ?? "C";
+    if (strike <= 0 || !expiry) continue;
+
+    if (expiryFilter && expiryFilter !== "all" && expiry !== expiryFilter) {
+      continue;
+    }
+
+    const iv = normalizeIv(parseNum(String(row.implied_volatility ?? "")));
+    const dte = dteByExpiry?.get(expiry) ?? 0;
+    legs.push({ strike, type, oi, iv, expiry, dte });
+  }
+
+  return legs;
+}
+
+async function fetchOptionContractsPaginated(
+  client: UnusualWhalesClient,
+  ticker: string,
+  tradingDate: string,
+  expiryFilter: string | undefined,
+  dteByExpiry: Map<string, number>,
+): Promise<OptionChainLeg[]> {
+  const legs: OptionChainLeg[] = [];
+
+  for (let page = 0; page < 40; page++) {
+    const res = (await client.optionContracts(ticker, {
+      date: tradingDate,
+      expiry: expiryFilter && expiryFilter !== "all" ? expiryFilter : undefined,
+      excludeZeroOiChains: true,
+      page,
+      limit: 500,
+    })) as UwDataResponse<UwOptionContractRow[]>;
+    const batch = res.data ?? [];
+    if (!batch.length) break;
+    legs.push(...parseOptionContractRows(batch, expiryFilter, dteByExpiry));
+    if (batch.length < 500) break;
+  }
+
+  return dedupeChainLegs(legs);
+}
+
 async function fetchOptionChainLegs(
   client: UnusualWhalesClient,
   ticker: string,
@@ -930,17 +1004,29 @@ async function fetchOptionChainLegs(
   expiryFilter: string | undefined,
   expiryRows: UwGreekExposureExpiryRow[],
 ): Promise<OptionChainLeg[]> {
+  const dteByExpiry = new Map(
+    expiryRows.map((row) => [expiryKey(row), row.dte] as const).filter(([key]) => Boolean(key)),
+  );
+
+  const contractLegs = await fetchOptionContractsPaginated(
+    client,
+    ticker,
+    tradingDate,
+    expiryFilter,
+    dteByExpiry,
+  );
+  if (contractLegs.length >= 8) return contractLegs;
+
   try {
     const res = (await client.optionChains(ticker, {
       date: tradingDate,
       greeks: true,
     })) as UwDataResponse<(UwOptionChainRow | string)[]>;
-    const dteByExpiry = new Map(
-      expiryRows.map((row) => [expiryKey(row), row.dte] as const).filter(([key]) => Boolean(key)),
-    );
-    return parseOptionChainLegs(res.data ?? [], expiryFilter, dteByExpiry);
+    const chainLegs = parseOptionChainLegs(res.data ?? [], expiryFilter, dteByExpiry);
+    const deduped = dedupeChainLegs(chainLegs);
+    return deduped.length ? deduped : contractLegs;
   } catch {
-    return [];
+    return contractLegs;
   }
 }
 
@@ -948,13 +1034,24 @@ function buildSimulatedChartStrikes(
   bars: GexStrikePoint[],
   legs: OptionChainLeg[],
   stockPrice: number,
+  tradingDate: string,
 ): { strikes: GexStrikePoint[]; simulatedFlip: number | null } {
-  const profile = simulateGammaProfile(legs, stockPrice);
+  const profile = simulateGammaProfile(legs, stockPrice, {
+    asOfDate: tradingDate,
+    steps: 250,
+  });
   if (!profile.length) return { strikes: bars, simulatedFlip: null };
 
   const simulatedFlip = gammaFlipFromSimulatedProfile(profile, stockPrice);
   const windowed = filterStrikeWindow(bars, stockPrice);
-  const strikes = mergeSimulatedProfileOntoBars(windowed, profile);
+  if (!windowed.length) return { strikes: bars, simulatedFlip };
+
+  const minStrike = windowed[0].strike;
+  const maxStrike = windowed[windowed.length - 1].strike;
+  const windowProfile = profile.filter(
+    (point) => point.simulatedSpot >= minStrike && point.simulatedSpot <= maxStrike,
+  );
+  const strikes = mergeSimulatedProfileOntoBars(windowed, windowProfile);
   return { strikes, simulatedFlip };
 }
 
@@ -1047,7 +1144,7 @@ export async function fetchGexStudy(
   let simulatedFlip: number | null = null;
   let chartStrikes: GexStrikePoint[] | null = null;
   if (chainLegs.length >= 8 && stockPrice != null && stockPrice > 0) {
-    const simulated = buildSimulatedChartStrikes(fullSeries, chainLegs, stockPrice);
+    const simulated = buildSimulatedChartStrikes(fullSeries, chainLegs, stockPrice, tradingDate);
     simulatedFlip = simulated.simulatedFlip;
     chartStrikes = simulated.strikes;
   }

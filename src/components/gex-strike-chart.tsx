@@ -554,7 +554,12 @@ export function GexStrikeChart({
             <polygon points={profileFills.positive} fill="#d4a853" opacity={0.18} stroke="none" />
           )}
 
-          {visible.map((point) => {
+          {visible
+            .filter(
+              (point) =>
+                point.netGex !== 0 || point.callGex !== 0 || point.putGex !== 0,
+            )
+            .map((point) => {
             const x = xForStrike(point.strike) - barWidth / 2;
             const y1 = yForBar(point.netGex);
             const positive = point.netGex >= 0;

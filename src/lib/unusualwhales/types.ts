@@ -121,6 +121,17 @@ export interface UwOptionChainRow {
   dte?: number;
 }
 
+/** Row from `/api/stock/{ticker}/option-contracts`. */
+export interface UwOptionContractRow {
+  option_symbol: string;
+  open_interest?: string | number;
+  implied_volatility?: string | number;
+  strike?: string | number;
+  expiry?: string;
+  delta?: string;
+  gamma?: string;
+}
+
 /** Spot gamma exposure per strike ($ / 1% move at current spot). */
 export interface UwSpotExposureStrikeRow {
   strike: string;
