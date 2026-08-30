@@ -1,5 +1,4 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
-import { computeGexLevelsFromUw } from "@/lib/scoring/gex";
 import { expiryKey, selectExpiryRows } from "@/lib/gex-scan/gex-scan";
 import type {
   GexExpiryMode,
@@ -7,7 +6,6 @@ import type {
   GexStudyResult,
   UwCandle,
   UwDataResponse,
-  UwGexLevels,
   UwGreekExposureExpiryRow,
   UwGreekExposureStrikeRow,
 } from "@/lib/unusualwhales/types";
@@ -69,20 +67,47 @@ export function filterStrikeWindow(
   return points.slice(start, end);
 }
 
-export function computeGammaFlip(points: GexStrikePoint[]): number | null {
+export function computeGammaFlip(
+  points: GexStrikePoint[],
+  stockPrice: number | null = null,
+): number | null {
+  const crossings: number[] = [];
+
   for (let i = 1; i < points.length; i++) {
     const prev = points[i - 1];
     const curr = points[i];
-    if (prev.profile === 0) return prev.strike;
-    if (curr.profile === 0) return curr.strike;
+    if (prev.profile === 0) {
+      crossings.push(prev.strike);
+      continue;
+    }
+    if (curr.profile === 0) {
+      crossings.push(curr.strike);
+      continue;
+    }
     if ((prev.profile < 0 && curr.profile > 0) || (prev.profile > 0 && curr.profile < 0)) {
       const span = curr.profile - prev.profile;
-      if (span === 0) return curr.strike;
+      if (span === 0) {
+        crossings.push(curr.strike);
+        continue;
+      }
       const ratio = -prev.profile / span;
-      return prev.strike + ratio * (curr.strike - prev.strike);
+      crossings.push(prev.strike + ratio * (curr.strike - prev.strike));
     }
   }
-  return null;
+
+  if (!crossings.length) return null;
+  if (stockPrice == null || stockPrice <= 0) return crossings[0];
+
+  let best = crossings[0];
+  let bestDist = Math.abs(best - stockPrice);
+  for (const crossing of crossings) {
+    const dist = Math.abs(crossing - stockPrice);
+    if (dist < bestDist) {
+      best = crossing;
+      bestDist = dist;
+    }
+  }
+  return best;
 }
 
 export function computeWallsFromSeries(
@@ -160,9 +185,8 @@ export async function fetchGexStudy(
   ticker: string,
   expiry: string,
 ): Promise<GexStudyResult> {
-  const [exposureRes, levelsRes, ohlcRes] = await Promise.all([
+  const [exposureRes, ohlcRes] = await Promise.all([
     client.greekExposureByExpiry(ticker) as Promise<UwDataResponse<UwGreekExposureExpiryRow[]>>,
-    client.gexLevels(ticker, "oi") as Promise<UwDataResponse<UwGexLevels>>,
     client.ohlc(ticker, "1d", 1) as Promise<UwDataResponse<UwCandle[]>>,
   ]);
 
@@ -184,32 +208,14 @@ export async function fetchGexStudy(
 
   const fullSeries = buildStrikeSeries(strikeRes.data ?? []);
   const totals = summarizeStrikeSeries(fullSeries);
+  const walls = computeWallsFromSeries(fullSeries, stockPrice);
+  const gammaFlip = computeGammaFlip(fullSeries, stockPrice);
 
-  let callWall: number | null = null;
-  let putWall: number | null = null;
-  let gammaFlip: number | null = null;
-  let gammaMagnet: number | null = null;
   let regime: GexStudyResult["regime"] = "neutral";
   let flipDistancePct: number | null = null;
-
-  if (useAll && levelsRes.data) {
-    const gex = computeGexLevelsFromUw(levelsRes.data, stockPrice ?? 0);
-    callWall = gex.callWall;
-    putWall = gex.putWall;
-    gammaFlip = gex.gammaFlip;
-    gammaMagnet = gex.gammaMagnet;
-    regime = gex.regime;
-    flipDistancePct = gex.flipDistancePct;
-  } else {
-    const walls = computeWallsFromSeries(fullSeries, stockPrice);
-    callWall = walls.callWall;
-    putWall = walls.putWall;
-    gammaMagnet = walls.gammaMagnet;
-    gammaFlip = computeGammaFlip(fullSeries);
-    if (gammaFlip != null && stockPrice != null && stockPrice > 0) {
-      regime = stockPrice >= gammaFlip ? "positive" : "negative";
-      flipDistancePct = ((stockPrice - gammaFlip) / stockPrice) * 100;
-    }
+  if (gammaFlip != null && stockPrice != null && stockPrice > 0) {
+    regime = stockPrice >= gammaFlip ? "positive" : "negative";
+    flipDistancePct = ((stockPrice - gammaFlip) / stockPrice) * 100;
   }
 
   return {
@@ -217,10 +223,10 @@ export async function fetchGexStudy(
     expiry,
     scannedAt: new Date().toISOString(),
     stockPrice,
-    callWall,
-    putWall,
+    callWall: walls.callWall,
+    putWall: walls.putWall,
     gammaFlip,
-    gammaMagnet,
+    gammaMagnet: walls.gammaMagnet,
     netGex: totals.netGex,
     callGex: totals.callGex,
     putGex: totals.putGex,
