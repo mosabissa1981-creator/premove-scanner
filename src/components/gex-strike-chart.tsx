@@ -8,6 +8,7 @@ import {
   isViewportZoomed,
   nearestStrike,
   panStrikeViewport,
+  sortStrikesByPrice,
   strikeBounds,
   strikesInViewport,
   zoomStrikeViewport,
@@ -16,6 +17,7 @@ import {
 import {
   createBarYScale,
   createProfileYScale,
+  createStrikeXScale,
   profileSeriesPoints,
 } from "@/utils/chart-domain";
 import {
@@ -32,6 +34,12 @@ const AXIS_FONT = 22;
 const LABEL_FONT = 20;
 const VALUE_FONT = 22;
 const TAP_THRESHOLD_PX = 10;
+
+function coerceStrike(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  const strike = Number(value);
+  return Number.isFinite(strike) ? strike : null;
+}
 
 function formatStrike(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
@@ -69,7 +77,9 @@ function staggerBottomLabels(labels: BottomLabel[], minSpacingPx: number): (Bott
   });
 
   const byKey = new Map(withRows.map((label) => [label.key, label]));
-  return labels.map((label) => byKey.get(label.key)!);
+  return [...labels]
+    .map((label) => byKey.get(label.key)!)
+    .sort((a, b) => a.x - b.x);
 }
 
 interface TooltipState {
@@ -110,10 +120,11 @@ export function GexStrikeChart({
   gammaFlip,
   callWall,
 }: GexStrikeChartProps) {
+  const sortedStrikes = useMemo(() => sortStrikesByPrice(strikes), [strikes]);
   const containerRef = useRef<HTMLDivElement>(null);
-  const bounds = useMemo(() => strikeBounds(strikes), [strikes]);
+  const bounds = useMemo(() => strikeBounds(sortedStrikes), [sortedStrikes]);
   const [viewport, setViewport] = useState<StrikeViewport>(() =>
-    initialStrikeViewport(strikes, stockPrice),
+    initialStrikeViewport(sortedStrikes, stockPrice),
   );
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const viewportRef = useRef(viewport);
@@ -144,16 +155,16 @@ export function GexStrikeChart({
   }, []);
 
   const resetView = useCallback(() => {
-    const next = initialStrikeViewport(strikes, stockPrice);
+    const next = initialStrikeViewport(sortedStrikes, stockPrice);
     viewportRef.current = next;
     setViewport(next);
     setTooltip(null);
-  }, [stockPrice, strikes]);
+  }, [stockPrice, sortedStrikes]);
 
   const chartDataKey = useMemo(() => {
-    if (!strikes.length) return "empty";
-    return `${strikes.length}:${strikes[0]?.strike}:${strikes[strikes.length - 1]?.strike}:${stockPrice ?? ""}`;
-  }, [strikes, stockPrice]);
+    if (!sortedStrikes.length) return "empty";
+    return `${sortedStrikes.length}:${sortedStrikes[0]?.strike}:${sortedStrikes[sortedStrikes.length - 1]?.strike}:${stockPrice ?? ""}`;
+  }, [sortedStrikes, stockPrice]);
 
   useEffect(() => {
     resetView();
@@ -162,10 +173,10 @@ export function GexStrikeChart({
   const showTooltipAt = useCallback(
     (clientX: number, clientY: number) => {
       const el = containerRef.current;
-      if (!el || !strikes.length) return;
+      if (!el || !sortedStrikes.length) return;
       const rect = el.getBoundingClientRect();
       const strike = clientXToStrike(clientX, rect, viewportRef.current);
-      const visible = strikesInViewport(strikes, viewportRef.current);
+      const visible = strikesInViewport(sortedStrikes, viewportRef.current);
       const point = nearestStrike(visible, strike);
       if (!point) return;
       setTooltip({
@@ -174,7 +185,7 @@ export function GexStrikeChart({
         y: clientY - rect.top,
       });
     },
-    [strikes],
+    [sortedStrikes],
   );
 
   useEffect(() => {
@@ -322,7 +333,7 @@ export function GexStrikeChart({
     [],
   );
 
-  if (!strikes.length) {
+  if (!sortedStrikes.length) {
     return (
       <div className="flex h-64 items-center justify-center rounded-xl border border-zinc-800 text-sm text-zinc-500">
         No strike data for this expiry.
@@ -330,17 +341,20 @@ export function GexStrikeChart({
     );
   }
 
-  const visible = strikesInViewport(strikes, viewport);
+  const visible = strikesInViewport(sortedStrikes, viewport);
   const barSeries = visible.filter(
     (point) => point.netGex !== 0 || point.callGex !== 0 || point.putGex !== 0,
   );
   const profileSeries = profileSeriesPoints(visible);
-  const strikeMin = viewport.min;
-  const strikeMax = viewport.max;
+  const strikeMin = Math.min(viewport.min, viewport.max);
+  const strikeMax = Math.max(viewport.min, viewport.max);
   const strikeSpan = strikeMax - strikeMin || 1;
 
   const plotW = CHART_WIDTH - PAD.left - PAD.right;
   const plotH = CHART_HEIGHT - PAD.top - PAD.bottom;
+
+  const xAxis = createStrikeXScale(strikeMin, strikeMax, PAD.left, plotW);
+  const xForStrike = (strike: number) => xAxis.toX(strike);
 
   const leftAxis = createBarYScale(
     barSeries.map((point) => point.netGex),
@@ -353,8 +367,6 @@ export function GexStrikeChart({
     plotH,
   );
 
-  const xForStrike = (strike: number) =>
-    PAD.left + ((strike - strikeMin) / strikeSpan) * plotW;
   const yForBar = (netGex: number) => leftAxis.toY(netGex);
   const yForProfile = (profile: number) => rightAxis.toY(profile);
   const zeroY = leftAxis.zeroY;
@@ -366,16 +378,21 @@ export function GexStrikeChart({
     .join(" ");
   const profileFills = buildProfileFillPolygons(profileSeries, xForStrike, yForProfile, zeroY);
 
-  const levels: LevelLine[] = [];
-  if (putWall != null && putWall >= strikeMin && putWall <= strikeMax) {
-    levels.push({ value: putWall, label: "Put Wall", color: GEX_CHART_THEME.levelColors.putWall });
-  }
-  if (gammaFlip != null && gammaFlip >= strikeMin && gammaFlip <= strikeMax) {
-    levels.push({ value: gammaFlip, label: "Gamma Flip", color: GEX_CHART_THEME.levelColors.gammaFlip });
-  }
-  if (callWall != null && callWall >= strikeMin && callWall <= strikeMax) {
-    levels.push({ value: callWall, label: "Call Wall", color: GEX_CHART_THEME.levelColors.callWall });
-  }
+  const levels: LevelLine[] = (
+    [
+      { value: coerceStrike(putWall), label: "Put Wall", color: GEX_CHART_THEME.levelColors.putWall },
+      { value: coerceStrike(gammaFlip), label: "Gamma Flip", color: GEX_CHART_THEME.levelColors.gammaFlip },
+      { value: coerceStrike(callWall), label: "Call Wall", color: GEX_CHART_THEME.levelColors.callWall },
+    ] as Array<{ value: number | null; label: string; color: string }>
+  )
+    .flatMap((level) =>
+      level.value != null && level.value >= strikeMin && level.value <= strikeMax
+        ? [{ value: level.value, label: level.label, color: level.color }]
+        : [],
+    )
+    .sort((a, b) => a.value - b.value);
+
+  const spotStrike = coerceStrike(stockPrice);
 
   const yTicks = leftAxis.ticks;
   const profileAxisTicks = rightAxis.ticks;
@@ -398,12 +415,12 @@ export function GexStrikeChart({
         text: formatStrike(level.value),
         color: level.color,
       })),
-      ...(stockPrice != null && stockPrice >= strikeMin && stockPrice <= strikeMax
+      ...(spotStrike != null && spotStrike >= strikeMin && spotStrike <= strikeMax
         ? [
             {
               key: "spot",
-              x: xForStrike(stockPrice),
-              text: formatStrike(stockPrice),
+              x: xForStrike(spotStrike),
+              text: formatStrike(spotStrike),
               color: "#eff6ff",
               pill: true,
             },
@@ -561,11 +578,10 @@ export function GexStrikeChart({
             />
           </g>
 
-          {levels.map((level, index) => {
+          {levels.map((level) => {
             const x = xForStrike(level.value);
-            const labelOffset = (index - (levels.length - 1) / 2) * 18;
             return (
-              <g key={level.label}>
+              <g key={`${level.label}-${level.value}`}>
                 <line
                   x1={x}
                   y1={PAD.top}
@@ -577,7 +593,7 @@ export function GexStrikeChart({
                 />
                 <text
                   x={x}
-                  y={PAD.top - 12 + labelOffset}
+                  y={PAD.top - 12}
                   textAnchor="middle"
                   fill={GEX_CHART_THEME.levelLabelColor}
                   fontSize={LABEL_FONT}
@@ -626,12 +642,12 @@ export function GexStrikeChart({
             ),
           )}
 
-          {stockPrice != null && stockPrice >= strikeMin && stockPrice <= strikeMax && (
+          {spotStrike != null && spotStrike >= strikeMin && spotStrike <= strikeMax && (
             <g>
               <line
-                x1={xForStrike(stockPrice)}
+                x1={xForStrike(spotStrike)}
                 y1={PAD.top}
-                x2={xForStrike(stockPrice)}
+                x2={xForStrike(spotStrike)}
                 y2={PAD.top + plotH}
                 stroke="#3b82f6"
                 strokeWidth={1}
