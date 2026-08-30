@@ -322,12 +322,47 @@ export function interpolateProfileAtStrike(
 
 export { isRelevantGammaFlip } from "@/lib/scoring/gex";
 
-/** Chart series: ATM window with profile rebased to zero at the left edge. */
+/** Chart series: ATM window with gamma profile anchored at the flip level. */
+export function buildFlipAnchoredProfile(
+  points: GexStrikePoint[],
+  stockPrice: number | null,
+  gammaFlip: number | null,
+): GexStrikePoint[] {
+  const window = filterStrikeWindow(points, stockPrice);
+  if (!window.length) return [];
+  if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
+
+  const sorted = [...window].sort((a, b) => a.strike - b.strike);
+  return sorted.map((point) => {
+    let profile = 0;
+    if (point.strike >= gammaFlip) {
+      for (const row of sorted) {
+        if (row.strike > gammaFlip && row.strike <= point.strike) profile += row.netGex;
+      }
+    } else {
+      for (const row of sorted) {
+        if (row.strike >= point.strike && row.strike < gammaFlip) profile += row.netGex;
+      }
+    }
+    return { ...point, profile };
+  });
+}
+
 export function prepareChartStrikeSeries(
   points: GexStrikePoint[],
   stockPrice: number | null,
+  gammaFlip: number | null = null,
+  source: "spot" | "greek" = "greek",
 ): GexStrikePoint[] {
-  return rebaseProfileWindow(points, stockPrice);
+  if (source === "spot") {
+    const window = filterStrikeWindow(points, stockPrice);
+    let cumulative = 0;
+    return window.map((point) => {
+      cumulative += point.netGex;
+      return { ...point, profile: cumulative };
+    });
+  }
+  return buildFlipAnchoredProfile(points, stockPrice, gammaFlip);
 }
 
 /** All-expiry flip: profile when reliable, OI gamma_flip, deeper vol flip for MSFT-style. */
@@ -478,40 +513,42 @@ async function fetchSpotByStrike(
   tradingDate: string,
   stockPrice: number | null,
 ): Promise<UwSpotExposureStrikeRow[]> {
-  const rows: UwSpotExposureStrikeRow[] = [];
-
-  for (let page = 0; page < 20; page++) {
-    const res = (await client.spotExposureByStrike(ticker, {
-      date: tradingDate,
-      page,
-      limit: 500,
-    })) as UwDataResponse<UwSpotExposureStrikeRow[]>;
-    const batch = res.data ?? [];
-    if (!batch.length) break;
-    rows.push(...batch);
-    if (batch.length < 500) break;
-  }
-
-  if (hasUsableSpotStrikes(rows)) return aggregateSpotRows(rows);
-
-  if (stockPrice != null && stockPrice > 0) {
-    const minStrike = Math.max(0, stockPrice * 0.2);
-    const maxStrike = stockPrice * 1.8;
-    const windowRows: UwSpotExposureStrikeRow[] = [];
+  for (const date of [tradingDate, undefined]) {
+    const rows: UwSpotExposureStrikeRow[] = [];
     for (let page = 0; page < 20; page++) {
       const res = (await client.spotExposureByStrike(ticker, {
-        date: tradingDate,
-        minStrike,
-        maxStrike,
+        date,
         page,
         limit: 500,
       })) as UwDataResponse<UwSpotExposureStrikeRow[]>;
       const batch = res.data ?? [];
       if (!batch.length) break;
-      windowRows.push(...batch);
+      rows.push(...batch);
       if (batch.length < 500) break;
     }
-    if (hasUsableSpotStrikes(windowRows)) return aggregateSpotRows(windowRows);
+    if (hasUsableSpotStrikes(rows)) return aggregateSpotRows(rows);
+  }
+
+  if (stockPrice != null && stockPrice > 0) {
+    const minStrike = Math.max(0, stockPrice * 0.2);
+    const maxStrike = stockPrice * 1.8;
+    for (const date of [tradingDate, undefined]) {
+      const windowRows: UwSpotExposureStrikeRow[] = [];
+      for (let page = 0; page < 20; page++) {
+        const res = (await client.spotExposureByStrike(ticker, {
+          date,
+          minStrike,
+          maxStrike,
+          page,
+          limit: 500,
+        })) as UwDataResponse<UwSpotExposureStrikeRow[]>;
+        const batch = res.data ?? [];
+        if (!batch.length) break;
+        windowRows.push(...batch);
+        if (batch.length < 500) break;
+      }
+      if (hasUsableSpotStrikes(windowRows)) return aggregateSpotRows(windowRows);
+    }
   }
 
   return [];
@@ -762,7 +799,7 @@ export async function fetchGexStudy(
     putGex: totals.putGex,
     regime,
     flipDistancePct,
-    strikes: prepareChartStrikeSeries(fullSeries, stockPrice),
+    strikes: prepareChartStrikeSeries(fullSeries, stockPrice, gammaFlip, strikePayload.source),
     availableExpiries,
   };
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildFlipAnchoredProfile,
   buildStrikeSeries,
   computeGammaFlip,
   computeGammaFlipDeep,
@@ -189,6 +190,23 @@ describe("pickDeepestSaneFlipBelowSpot", () => {
   it("ignores junk crossings far below spot", () => {
     const flip = pickDeepestSaneFlipBelowSpot([103.85, 344.28], 348.75);
     expect(flip).toBeCloseTo(344.28, 1);
+  });
+});
+
+describe("buildFlipAnchoredProfile", () => {
+  it("anchors profile at zero on the gamma flip strike", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "330", call_gamma_oi: "0", put_gamma_oi: "-100" },
+      { strike: "340", call_gamma_oi: "0", put_gamma_oi: "-50" },
+      { strike: "350", call_gamma_oi: "200", put_gamma_oi: "0" },
+      { strike: "360", call_gamma_oi: "100", put_gamma_oi: "0" },
+    ];
+    const series = buildStrikeSeries(rows, 355);
+    const chart = buildFlipAnchoredProfile(series, 355, 345);
+    const flipPoint = chart.find((point) => point.strike === 340);
+    const above = chart.find((point) => point.strike === 360);
+    expect(flipPoint?.profile).toBeLessThan(0);
+    expect(above?.profile).toBeGreaterThan(0);
   });
 });
 
