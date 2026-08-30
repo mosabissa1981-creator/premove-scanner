@@ -9,7 +9,8 @@ export interface OptionChainLeg {
 }
 
 export interface SimulatedProfilePoint {
-  strike: number;
+  /** Hypothetical underlying spot price used in this simulation step. */
+  simulatedSpot: number;
   profile: number;
 }
 
@@ -18,6 +19,8 @@ export interface GammaProfileSimOptions {
   defaultIv?: number;
   steps?: number;
   paddingPct?: number;
+  /** Trading session date (YYYY-MM-DD) for per-contract time to expiry. */
+  asOfDate?: string;
 }
 
 const DEFAULT_RISK_FREE_RATE = 0.04;
@@ -48,7 +51,7 @@ export function blackScholesGamma(
 
 /** Dollar gamma exposure ($ / 1% move) for one contract at a simulated spot. */
 export function dollarGammaExposure(
-  spot: number,
+  simulatedSpot: number,
   strike: number,
   timeYears: number,
   riskFreeRate: number,
@@ -56,15 +59,21 @@ export function dollarGammaExposure(
   oi: number,
   type: "C" | "P",
 ): number {
-  const gamma = blackScholesGamma(spot, strike, timeYears, riskFreeRate, iv);
+  const unitGamma = blackScholesGamma(simulatedSpot, strike, timeYears, riskFreeRate, iv);
   const direction = type === "C" ? 1 : -1;
-  return gamma * oi * 100 * spot * spot * 0.01 * direction;
+  // Scale to a 1% move of the simulated spot (S_sim), not the contract strike K.
+  return unitGamma * oi * 100 * simulatedSpot * simulatedSpot * 0.01 * direction;
 }
 
-function yearsToExpiry(expiry: string, asOf: Date): number {
+export function contractTimeYears(leg: OptionChainLeg, asOfDate: string): number {
+  if (leg.dte > 0) return Math.max(leg.dte / 365, 1 / 365);
+  return yearsToExpiry(leg.expiry, asOfDate);
+}
+
+function yearsToExpiry(expiry: string, asOfDate: string): number {
   const end = Date.parse(expiry.slice(0, 10));
-  const start = Date.parse(asOf.toISOString().slice(0, 10));
-  if (Number.isNaN(end) || Number.isNaN(start)) return 0;
+  const start = Date.parse(asOfDate.slice(0, 10));
+  if (Number.isNaN(end) || Number.isNaN(start)) return 1 / 365;
   const days = Math.max(0, (end - start) / MS_PER_DAY);
   return Math.max(days / 365, 1 / 365);
 }
@@ -74,38 +83,46 @@ function simulationRange(
   legs: OptionChainLeg[],
   paddingPct: number,
 ): { min: number; max: number } {
-  let minStrike = stockPrice * (1 - paddingPct);
-  let maxStrike = stockPrice * (1 + paddingPct);
+  let minSpot = stockPrice * (1 - paddingPct);
+  let maxSpot = stockPrice * (1 + paddingPct);
   for (const leg of legs) {
     if (leg.oi <= 0) continue;
-    minStrike = Math.min(minStrike, leg.strike);
-    maxStrike = Math.max(maxStrike, leg.strike);
+    minSpot = Math.min(minSpot, leg.strike);
+    maxSpot = Math.max(maxSpot, leg.strike);
   }
-  return { min: minStrike, max: maxStrike };
+  return { min: minSpot, max: maxSpot };
 }
 
 /** Total market GEX ($ / 1% move) if the underlying traded at `simulatedSpot`. */
 export function totalGammaAtSpot(
   legs: OptionChainLeg[],
   simulatedSpot: number,
-  options: GammaProfileSimOptions & { asOf?: Date } = {},
+  options: GammaProfileSimOptions = {},
 ): number {
   const r = options.riskFreeRate ?? DEFAULT_RISK_FREE_RATE;
   const defaultIv = options.defaultIv ?? DEFAULT_IV;
-  const asOf = options.asOf ?? new Date();
-  let total = 0;
+  const asOfDate = options.asOfDate ?? new Date().toISOString().slice(0, 10);
+  let totalGex = 0;
 
   for (const leg of legs) {
     if (leg.oi <= 0) continue;
     const iv = leg.iv > 0 ? leg.iv : defaultIv;
-    const timeYears = leg.dte > 0 ? leg.dte / 365 : yearsToExpiry(leg.expiry, asOf);
-    total += dollarGammaExposure(simulatedSpot, leg.strike, timeYears, r, iv, leg.oi, leg.type);
+    const timeYears = contractTimeYears(leg, asOfDate);
+    totalGex += dollarGammaExposure(
+      simulatedSpot,
+      leg.strike,
+      timeYears,
+      r,
+      iv,
+      leg.oi,
+      leg.type,
+    );
   }
 
-  return total;
+  return totalGex;
 }
 
-/** OptionCharts-style gamma profile: simulate total GEX across hypothetical spot prices. */
+/** OptionCharts-style gamma profile: independent total GEX at each hypothetical spot. */
 export function simulateGammaProfile(
   legs: OptionChainLeg[],
   stockPrice: number,
@@ -119,19 +136,18 @@ export function simulateGammaProfile(
   const span = max - min;
   if (span <= 0) return [];
 
-  const simOptions = {
+  const simOptions: GammaProfileSimOptions = {
     riskFreeRate: options.riskFreeRate,
     defaultIv: options.defaultIv,
-    asOf: new Date(),
+    asOfDate: options.asOfDate,
   };
 
   const points: SimulatedProfilePoint[] = [];
   for (let i = 0; i <= steps; i++) {
-    const strike = min + (span * i) / steps;
-    points.push({
-      strike,
-      profile: totalGammaAtSpot(legs, strike, simOptions),
-    });
+    const simulatedSpot = min + (span * i) / steps;
+    // Fresh accumulator per simulated spot — never carry state across the x-axis.
+    const profile = totalGammaAtSpot(legs, simulatedSpot, simOptions);
+    points.push({ simulatedSpot, profile });
   }
 
   return points;
@@ -139,21 +155,21 @@ export function simulateGammaProfile(
 
 export function interpolateSimulatedProfile(
   profile: SimulatedProfilePoint[],
-  strike: number,
+  spot: number,
 ): number | null {
-  if (!profile.length || !Number.isFinite(strike)) return null;
-  const sorted = [...profile].sort((a, b) => a.strike - b.strike);
-  if (strike <= sorted[0].strike) return sorted[0].profile;
+  if (!profile.length || !Number.isFinite(spot)) return null;
+  const sorted = [...profile].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
+  if (spot <= sorted[0].simulatedSpot) return sorted[0].profile;
   const last = sorted[sorted.length - 1];
-  if (strike >= last.strike) return last.profile;
+  if (spot >= last.simulatedSpot) return last.profile;
 
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1];
     const curr = sorted[i];
-    if (strike < prev.strike || strike > curr.strike) continue;
-    const span = curr.strike - prev.strike;
+    if (spot < prev.simulatedSpot || spot > curr.simulatedSpot) continue;
+    const span = curr.simulatedSpot - prev.simulatedSpot;
     if (span === 0) return curr.profile;
-    const ratio = (strike - prev.strike) / span;
+    const ratio = (spot - prev.simulatedSpot) / span;
     return prev.profile + ratio * (curr.profile - prev.profile);
   }
 
@@ -167,31 +183,76 @@ export function gammaFlipFromSimulatedProfile(
 ): number | null {
   if (!profile.length || stockPrice <= 0) return null;
 
-  const sorted = [...profile].sort((a, b) => a.strike - b.strike);
+  const sorted = [...profile].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
   const minStrike = stockPrice * 0.45;
 
   for (let i = sorted.length - 1; i >= 1; i--) {
     const prev = sorted[i - 1];
     const curr = sorted[i];
-    if (curr.strike > stockPrice || prev.strike < minStrike) continue;
+    if (curr.simulatedSpot > stockPrice || prev.simulatedSpot < minStrike) continue;
     if (prev.profile <= 0 && curr.profile >= 0) {
       const span = curr.profile - prev.profile;
-      if (span === 0) return curr.strike;
+      if (span === 0) return curr.simulatedSpot;
       const ratio = -prev.profile / span;
-      return prev.strike + ratio * (curr.strike - prev.strike);
+      return prev.simulatedSpot + ratio * (curr.simulatedSpot - prev.simulatedSpot);
     }
   }
 
   return null;
 }
 
-/** Attach simulated profile values to bar strike points. */
+/** Merge dense simulated profile with bar strikes for a smooth curve + accurate tooltips. */
 export function mergeSimulatedProfileOntoBars(
   bars: { strike: number; callGex: number; putGex: number; netGex: number; profile: number }[],
   profile: SimulatedProfilePoint[],
 ): typeof bars {
-  return bars.map((point) => ({
-    ...point,
-    profile: interpolateSimulatedProfile(profile, point.strike) ?? 0,
-  }));
+  if (!profile.length) {
+    return bars.map((point) => ({ ...point, profile: 0 }));
+  }
+
+  const sortedProfile = [...profile].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
+  const minSpot = sortedProfile[0].simulatedSpot;
+  const maxSpot = sortedProfile[sortedProfile.length - 1].simulatedSpot;
+  const barByStrike = new Map(bars.map((bar) => [bar.strike, bar]));
+
+  const merged: typeof bars = [];
+  for (const point of sortedProfile) {
+    if (point.simulatedSpot < minSpot || point.simulatedSpot > maxSpot) continue;
+    const bar = barByStrike.get(point.simulatedSpot);
+    if (bar) {
+      merged.push({ ...bar, profile: point.profile });
+      continue;
+    }
+    merged.push({
+      strike: point.simulatedSpot,
+      callGex: 0,
+      putGex: 0,
+      netGex: 0,
+      profile: point.profile,
+    });
+  }
+
+  for (const bar of bars) {
+    if (!merged.some((point) => Math.abs(point.strike - bar.strike) < 1e-6)) {
+      merged.push({
+        ...bar,
+        profile: interpolateSimulatedProfile(profile, bar.strike) ?? 0,
+      });
+    }
+  }
+
+  return merged.sort((a, b) => a.strike - b.strike);
+}
+
+/** Remove duplicate contracts (same expiry/strike/type). */
+export function dedupeChainLegs(legs: OptionChainLeg[]): OptionChainLeg[] {
+  const byKey = new Map<string, OptionChainLeg>();
+  for (const leg of legs) {
+    const key = `${leg.expiry}|${leg.strike}|${leg.type}`;
+    const existing = byKey.get(key);
+    if (!existing || leg.oi > existing.oi) {
+      byKey.set(key, leg);
+    }
+  }
+  return [...byKey.values()];
 }

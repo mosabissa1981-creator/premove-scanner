@@ -218,6 +218,25 @@ export class UnusualWhalesClient {
     }, 120_000);
   }
 
+  optionContracts(
+    ticker: string,
+    params: {
+      date?: string;
+      expiry?: string;
+      excludeZeroOiChains?: boolean;
+      page?: number;
+      limit?: number;
+    } = {},
+  ) {
+    return this.get(`/api/stock/${ticker}/option-contracts`, {
+      date: params.date,
+      expiry: params.expiry,
+      exclude_zero_oi_chains: params.excludeZeroOiChains,
+      page: params.page,
+      limit: params.limit ?? 500,
+    }, 120_000);
+  }
+
   spotExposureByStrike(
     ticker: string,
     params: {

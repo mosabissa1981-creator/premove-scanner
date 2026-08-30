@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { OptionChainLeg } from "@/lib/gex-study/gamma-profile-sim";
 import {
   blackScholesGamma,
+  dedupeChainLegs,
   dollarGammaExposure,
   gammaFlipFromSimulatedProfile,
   interpolateSimulatedProfile,
@@ -46,6 +47,24 @@ describe("dollarGammaExposure", () => {
     expect(put).toBeLessThan(0);
     expect(Math.abs(put)).toBeCloseTo(Math.abs(call), 0);
   });
+
+  it("scales with simulated spot squared, not contract strike squared", () => {
+    const atSpot = dollarGammaExposure(250, 270, 30 / 365, 0.04, 0.25, 10_000, "C");
+    const wrongScale = blackScholesGamma(250, 270, 30 / 365, 0.04, 0.25) * 10_000 * 100 * 270 * 270 * 0.01;
+    expect(atSpot).not.toBeCloseTo(wrongScale, 0);
+  });
+});
+
+describe("dedupeChainLegs", () => {
+  it("keeps one leg per expiry/strike/type", () => {
+    const legs = dedupeChainLegs([
+      { strike: 250, type: "P", oi: 100, iv: 0.25, expiry: "2026-09-19", dte: 30 },
+      { strike: 250, type: "P", oi: 200, iv: 0.25, expiry: "2026-09-19", dte: 30 },
+      { strike: 250, type: "C", oi: 50, iv: 0.25, expiry: "2026-09-19", dte: 30 },
+    ]);
+    expect(legs).toHaveLength(2);
+    expect(legs.find((leg) => leg.type === "P")?.oi).toBe(200);
+  });
 });
 
 describe("simulateGammaProfile", () => {
@@ -56,6 +75,7 @@ describe("simulateGammaProfile", () => {
       defaultIv: 0.25,
       steps: 250,
       paddingPct: 0.45,
+      asOfDate: "2026-08-30",
     });
 
     expect(profile.length).toBeGreaterThan(100);
@@ -70,6 +90,25 @@ describe("simulateGammaProfile", () => {
     expect(flip!).toBeLessThan(stockPrice);
   });
 
+  it("recomputes an isolated total at every simulated spot (no running sum)", () => {
+    const stockPrice = 266;
+    const profile = simulateGammaProfile(GOOGLE_EXAMPLE_CHAIN, stockPrice, {
+      steps: 40,
+      asOfDate: "2026-08-30",
+    });
+    const strictlyDecreasing = profile.every(
+      (point, index) => index === 0 || point.profile <= profile[index - 1].profile,
+    );
+    expect(strictlyDecreasing).toBe(false);
+
+    for (const point of profile) {
+      const isolated = totalGammaAtSpot(GOOGLE_EXAMPLE_CHAIN, point.simulatedSpot, {
+        asOfDate: "2026-08-30",
+      });
+      expect(point.profile).toBeCloseTo(isolated, 4);
+    }
+  });
+
   it("matches the Google example formula at a fixed simulated spot", () => {
     const spot = 250;
     let manual = 0;
@@ -79,6 +118,7 @@ describe("simulateGammaProfile", () => {
     const computed = totalGammaAtSpot(GOOGLE_EXAMPLE_CHAIN, spot, {
       riskFreeRate: 0.04,
       defaultIv: 0.25,
+      asOfDate: "2026-08-30",
     });
     expect(computed).toBeCloseTo(manual, 4);
   });

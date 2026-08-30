@@ -14,6 +14,8 @@ import {
   hasUsableSpotStrikes,
   interpolateProfileAtStrike,
   parseOptionChainLegs,
+  parseOptionContractRows,
+  parseOsiOptionSymbol,
   pickAllExpiryGammaFlip,
   pickDeepestSaneFlipBelowSpot,
   prepareChartStrikeSeries,
@@ -32,6 +34,49 @@ const rows: UwSpotExposureStrikeRow[] = [
   { strike: "75", call_gamma_oi: "200000", put_gamma_oi: "-5000" },
   { strike: "80", call_gamma_oi: "180000", put_gamma_oi: "-15000" },
 ];
+
+describe("parseOsiOptionSymbol", () => {
+  it("extracts strike, type, and expiry from OSI symbols", () => {
+    expect(parseOsiOptionSymbol("AMZN250919P00250000")).toEqual({
+      type: "P",
+      strike: 250,
+      expiry: "2025-09-19",
+    });
+    expect(parseOsiOptionSymbol("AMZN250919C00275000")).toEqual({
+      type: "C",
+      strike: 275,
+      expiry: "2025-09-19",
+    });
+  });
+});
+
+describe("parseOptionContractRows", () => {
+  it("maps paginated contract rows with per-contract IV and expiry", () => {
+    const legs = parseOptionContractRows(
+      [
+        {
+          option_symbol: "AMZN250919P00250000",
+          open_interest: 75000,
+          implied_volatility: "0.28",
+        },
+        {
+          option_symbol: "AMZN251017C00275000",
+          open_interest: 90000,
+          implied_volatility: "0.31",
+        },
+      ],
+      undefined,
+      new Map([
+        ["2025-09-19", 20],
+        ["2025-10-17", 48],
+      ]),
+    );
+
+    expect(legs).toHaveLength(2);
+    expect(legs[0]).toMatchObject({ strike: 250, type: "P", oi: 75_000, iv: 0.28, dte: 20 });
+    expect(legs[1]).toMatchObject({ strike: 275, type: "C", oi: 90_000, iv: 0.31, dte: 48 });
+  });
+});
 
 describe("parseOptionChainLegs", () => {
   it("maps enriched UW rows into simulation legs", () => {
