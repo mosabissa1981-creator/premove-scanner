@@ -1,13 +1,15 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
-import { aggregateGex, expiryKey, selectExpiryRows } from "@/lib/gex-scan/gex-scan";
+import { computeGexLevelsFromUw } from "@/lib/scoring/gex";
+import { expiryKey, selectExpiryRows } from "@/lib/gex-scan/gex-scan";
 import type {
   GexExpiryMode,
   GexStrikePoint,
   GexStudyResult,
   UwCandle,
   UwDataResponse,
+  UwGexLevels,
   UwGreekExposureExpiryRow,
-  UwGreekExposureStrikeRow,
+  UwSpotExposureStrikeRow,
 } from "@/lib/unusualwhales/types";
 
 function parseNum(value: string | null | undefined): number {
@@ -23,12 +25,12 @@ function latestClose(candles: UwCandle[]): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
-export function buildStrikeSeries(rows: UwGreekExposureStrikeRow[]): GexStrikePoint[] {
+export function buildStrikeSeries(rows: UwSpotExposureStrikeRow[]): GexStrikePoint[] {
   const sorted = [...rows]
     .map((row) => {
       const strike = parseNum(row.strike);
-      const callGex = parseNum(row.call_gex);
-      const putGex = parseNum(row.put_gex);
+      const callGex = parseNum(row.call_gamma_oi);
+      const putGex = parseNum(row.put_gamma_oi);
       return { strike, callGex, putGex, netGex: callGex + putGex, profile: 0 };
     })
     .filter((row) => row.strike > 0)
@@ -99,6 +101,7 @@ function collectProfileCrossings(points: GexStrikePoint[]): ProfileCrossing[] {
   return crossings;
 }
 
+/** Zero-gamma level: profile crossing nearest to spot (matches UW gex-levels). */
 export function computeGammaFlip(
   points: GexStrikePoint[],
   stockPrice: number | null = null,
@@ -107,40 +110,11 @@ export function computeGammaFlip(
   if (!crossings.length) return null;
   if (stockPrice == null || stockPrice <= 0) return crossings[0].strike;
 
-  // Ignore deep-OTM noise; focus on the tradeable range around spot.
-  const minStrike = stockPrice * 0.45;
-  const inBand = crossings.filter(
-    (crossing) => crossing.strike >= minStrike && crossing.strike <= stockPrice + 1e-6,
-  );
-
-  const risingBelowSpot = inBand.filter((crossing) => crossing.rising);
-  if (risingBelowSpot.length) {
-    return risingBelowSpot[risingBelowSpot.length - 1].strike;
-  }
-
-  if (inBand.length) {
-    return inBand.reduce((best, crossing) =>
-      Math.abs(crossing.strike - stockPrice) < Math.abs(best.strike - stockPrice)
-        ? crossing
-        : best,
-    ).strike;
-  }
-
-  // Scan the near-spot strike window for a local zero crossing below spot.
-  const window = filterStrikeWindow(points, stockPrice);
-  for (let i = window.length - 1; i >= 1; i--) {
-    const prev = window[i - 1];
-    const curr = window[i];
-    if (curr.strike > stockPrice) continue;
-    if (prev.profile <= 0 && curr.profile >= 0) {
-      const span = curr.profile - prev.profile;
-      if (span === 0) return curr.strike;
-      const ratio = -prev.profile / span;
-      return prev.strike + ratio * (curr.strike - prev.strike);
-    }
-  }
-
-  return crossings[0].strike;
+  return crossings.reduce((best, crossing) =>
+    Math.abs(crossing.strike - stockPrice) < Math.abs(best.strike - stockPrice)
+      ? crossing
+      : best,
+  ).strike;
 }
 
 export function computeWallsFromSeries(
@@ -213,14 +187,46 @@ export function resolveStudyExpiry(
   return key || "all";
 }
 
+async function fetchAllSpotExposures(
+  client: UnusualWhalesClient,
+  ticker: string,
+  expiry?: string,
+): Promise<UwSpotExposureStrikeRow[]> {
+  if (expiry) {
+    const res = (await client.spotExposureByExpiryStrike(ticker, [
+      expiry,
+    ])) as UwDataResponse<UwSpotExposureStrikeRow[]>;
+    return res.data ?? [];
+  }
+
+  const rows: UwSpotExposureStrikeRow[] = [];
+  for (let page = 0; page < 20; page++) {
+    const res = (await client.spotExposureByStrike(ticker, {
+      page,
+      limit: 500,
+    })) as UwDataResponse<UwSpotExposureStrikeRow[]>;
+    const batch = res.data ?? [];
+    if (!batch.length) break;
+    rows.push(...batch);
+    if (batch.length < 500) break;
+  }
+  return rows;
+}
+
 export async function fetchGexStudy(
   client: UnusualWhalesClient,
   ticker: string,
   expiry: string,
 ): Promise<GexStudyResult> {
-  const [exposureRes, ohlcRes] = await Promise.all([
+  const useAll = expiry === "all";
+
+  const [exposureRes, ohlcRes, spotRows, levelsRes] = await Promise.all([
     client.greekExposureByExpiry(ticker) as Promise<UwDataResponse<UwGreekExposureExpiryRow[]>>,
     client.ohlc(ticker, "1d", 1) as Promise<UwDataResponse<UwCandle[]>>,
+    fetchAllSpotExposures(client, ticker, useAll ? undefined : expiry),
+    useAll
+      ? (client.gexLevels(ticker, "oi") as Promise<UwDataResponse<UwGexLevels>>)
+      : Promise.resolve(null),
   ]);
 
   const expiryRows = exposureRes.data ?? [];
@@ -230,21 +236,27 @@ export async function fetchGexStudy(
     .sort((a, b) => a.dte - b.dte);
 
   const stockPrice = latestClose(ohlcRes.data ?? []);
-  const useAll = expiry === "all";
+  const fullSeries = buildStrikeSeries(spotRows);
+  const totals = summarizeStrikeSeries(fullSeries);
 
-  const strikeRes = useAll
-    ? ((await client.greekExposureByStrike(ticker)) as UwDataResponse<UwGreekExposureStrikeRow[]>)
-    : ((await client.greekExposureByStrikeExpiry(
-        ticker,
-        expiry,
-      )) as UwDataResponse<UwGreekExposureStrikeRow[]>);
+  let callWall: number | null;
+  let putWall: number | null;
+  let gammaFlip: number | null;
+  let gammaMagnet: number | null;
 
-  const fullSeries = buildStrikeSeries(strikeRes.data ?? []);
-  const totals = useAll
-    ? aggregateGex(expiryRows)
-    : summarizeStrikeSeries(fullSeries);
-  const walls = computeWallsFromSeries(fullSeries, stockPrice);
-  const gammaFlip = computeGammaFlip(fullSeries, stockPrice);
+  if (useAll && levelsRes?.data) {
+    const levels = computeGexLevelsFromUw(levelsRes.data, stockPrice ?? 0);
+    callWall = levels.callWall;
+    putWall = levels.putWall;
+    gammaFlip = levels.gammaFlip;
+    gammaMagnet = levels.gammaMagnet;
+  } else {
+    const walls = computeWallsFromSeries(fullSeries, stockPrice);
+    callWall = walls.callWall;
+    putWall = walls.putWall;
+    gammaMagnet = walls.gammaMagnet;
+    gammaFlip = computeGammaFlip(fullSeries, stockPrice);
+  }
 
   let regime: GexStudyResult["regime"] = "neutral";
   let flipDistancePct: number | null = null;
@@ -258,10 +270,10 @@ export async function fetchGexStudy(
     expiry,
     scannedAt: new Date().toISOString(),
     stockPrice,
-    callWall: walls.callWall,
-    putWall: walls.putWall,
+    callWall,
+    putWall,
     gammaFlip,
-    gammaMagnet: walls.gammaMagnet,
+    gammaMagnet,
     netGex: totals.netGex,
     callGex: totals.callGex,
     putGex: totals.putGex,

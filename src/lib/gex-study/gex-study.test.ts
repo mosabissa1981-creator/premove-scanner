@@ -6,16 +6,16 @@ import {
   filterStrikeWindow,
   summarizeStrikeSeries,
 } from "@/lib/gex-study/gex-study";
-import type { UwGreekExposureStrikeRow } from "@/lib/unusualwhales/types";
+import type { UwSpotExposureStrikeRow } from "@/lib/unusualwhales/types";
 
-const rows: UwGreekExposureStrikeRow[] = [
-  { strike: "50", call_gex: "100000", put_gex: "-20000" },
-  { strike: "55", call_gex: "80000", put_gex: "-30000" },
-  { strike: "60", call_gex: "50000", put_gex: "-80000" },
-  { strike: "65", call_gex: "20000", put_gex: "-120000" },
-  { strike: "70", call_gex: "150000", put_gex: "-10000" },
-  { strike: "75", call_gex: "200000", put_gex: "-5000" },
-  { strike: "80", call_gex: "180000", put_gex: "-15000" },
+const rows: UwSpotExposureStrikeRow[] = [
+  { strike: "50", call_gamma_oi: "100000", put_gamma_oi: "-20000" },
+  { strike: "55", call_gamma_oi: "80000", put_gamma_oi: "-30000" },
+  { strike: "60", call_gamma_oi: "50000", put_gamma_oi: "-80000" },
+  { strike: "65", call_gamma_oi: "20000", put_gamma_oi: "-120000" },
+  { strike: "70", call_gamma_oi: "150000", put_gamma_oi: "-10000" },
+  { strike: "75", call_gamma_oi: "200000", put_gamma_oi: "-5000" },
+  { strike: "80", call_gamma_oi: "180000", put_gamma_oi: "-15000" },
 ];
 
 describe("buildStrikeSeries", () => {
@@ -39,12 +39,12 @@ describe("computeGammaFlip", () => {
     expect(flip!).toBeLessThan(70);
   });
 
-  it("ignores deep OTM crossings and uses the rising flip near spot", () => {
-    const wideRows: UwGreekExposureStrikeRow[] = [
-      { strike: "5", call_gex: "0", put_gex: "-100" },
-      { strike: "10", call_gex: "200", put_gex: "0" },
-      { strike: "190", call_gex: "0", put_gex: "-500" },
-      { strike: "200", call_gex: "500", put_gex: "0" },
+  it("uses the zero crossing nearest to spot, ignoring deep OTM noise", () => {
+    const wideRows: UwSpotExposureStrikeRow[] = [
+      { strike: "5", call_gamma_oi: "0", put_gamma_oi: "-100" },
+      { strike: "10", call_gamma_oi: "200", put_gamma_oi: "0" },
+      { strike: "190", call_gamma_oi: "0", put_gamma_oi: "-500" },
+      { strike: "200", call_gamma_oi: "500", put_gamma_oi: "0" },
     ];
     const series = buildStrikeSeries(wideRows);
     const flip = computeGammaFlip(series, 217.55);
@@ -53,12 +53,12 @@ describe("computeGammaFlip", () => {
     expect(flip!).toBeLessThan(205);
   });
 
-  it("uses the highest zero crossing at or below spot when multiple exist in band", () => {
-    const wideRows: UwGreekExposureStrikeRow[] = [
-      { strike: "50", call_gex: "0", put_gex: "-100" },
-      { strike: "60", call_gex: "200", put_gex: "0" },
-      { strike: "200", call_gex: "0", put_gex: "-500" },
-      { strike: "210", call_gex: "500", put_gex: "0" },
+  it("prefers the crossing closest to spot when multiple exist", () => {
+    const wideRows: UwSpotExposureStrikeRow[] = [
+      { strike: "50", call_gamma_oi: "0", put_gamma_oi: "-100" },
+      { strike: "60", call_gamma_oi: "200", put_gamma_oi: "0" },
+      { strike: "200", call_gamma_oi: "0", put_gamma_oi: "-500" },
+      { strike: "210", call_gamma_oi: "500", put_gamma_oi: "0" },
     ];
     const series = buildStrikeSeries(wideRows);
     const flip = computeGammaFlip(series, 217.55);
@@ -79,10 +79,10 @@ describe("computeWallsFromSeries", () => {
 
 describe("filterStrikeWindow", () => {
   it("keeps strikes near the stock price when enough data exists", () => {
-    const wideRows: UwGreekExposureStrikeRow[] = Array.from({ length: 30 }, (_, i) => ({
+    const wideRows: UwSpotExposureStrikeRow[] = Array.from({ length: 30 }, (_, i) => ({
       strike: String(40 + i * 2),
-      call_gex: "10000",
-      put_gex: "-5000",
+      call_gamma_oi: "10000",
+      put_gamma_oi: "-5000",
     }));
     const series = buildStrikeSeries(wideRows);
     const visible = filterStrikeWindow(series, 64, 0.2);
