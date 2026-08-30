@@ -193,7 +193,7 @@ describe("pickDeepestSaneFlipBelowSpot", () => {
 });
 
 describe("buildCumulativeProfileAtFlip", () => {
-  it("accumulates full-chain bar volume with profile zero near gamma flip", () => {
+  it("rebases full-chain cumulative to zero at gamma flip", () => {
     const rows: UwSpotExposureStrikeRow[] = [
       { strike: "200", call_gamma_oi: "0", put_gamma_oi: "-100" },
       { strike: "220", call_gamma_oi: "0", put_gamma_oi: "-100" },
@@ -203,7 +203,7 @@ describe("buildCumulativeProfileAtFlip", () => {
     ];
     const series = buildStrikeSeries(rows, 266);
     const flipSeries = buildFlipSeries(rows, 266);
-    const gammaFlip = computeGammaFlipFromWindow(flipSeries, 266)!;
+    const gammaFlip = computeGammaFlipDeep(flipSeries, 266)!;
     const chart = buildCumulativeProfileAtFlip(series, 266, gammaFlip, flipSeries);
     expect(interpolateProfileAtStrike(chart, 220)!).toBeLessThan(0);
     expect(interpolateProfileAtStrike(chart, 270)!).toBeGreaterThan(0);
@@ -228,7 +228,7 @@ describe("buildCumulativeProfileAtFlip", () => {
     ];
     const series = buildStrikeSeries(rows, 266);
     const flipSeries = buildFlipSeries(rows, 266);
-    const gammaFlip = computeGammaFlipFromWindow(flipSeries, 266)!;
+    const gammaFlip = computeGammaFlipDeep(flipSeries, 266)!;
     const chart = buildCumulativeProfileAtFlip(series, 266, gammaFlip, flipSeries);
     const at220 = interpolateProfileAtStrike(chart, 220)!;
     const at245 = interpolateProfileAtStrike(chart, 245)!;
@@ -276,7 +276,7 @@ describe("computeNetGexBarFlip", () => {
 });
 
 describe("prepareChartStrikeSeries", () => {
-  it("anchors profile zero at gamma flip for a smooth flip-anchored curve", () => {
+  it("uses raw cumulative profile that crosses zero at gamma flip", () => {
     const rows: UwSpotExposureStrikeRow[] = [
       { strike: "240", call_gamma_oi: "0", put_gamma_oi: "-100" },
       { strike: "250", call_gamma_oi: "0", put_gamma_oi: "-50" },
@@ -287,7 +287,7 @@ describe("prepareChartStrikeSeries", () => {
     ];
     const series = buildStrikeSeries(rows, 266);
     const flipSeries = buildFlipSeries(rows, 266);
-    const gammaFlip = computeGammaFlipFromWindow(flipSeries, 266)!;
+    const gammaFlip = computeGammaFlipDeep(flipSeries, 266)!;
     const chart = prepareChartStrikeSeries(series, 266, gammaFlip, flipSeries);
     const atFlip = interpolateProfileAtStrike(chart, gammaFlip);
     const below = interpolateProfileAtStrike(chart, 250);
@@ -297,7 +297,7 @@ describe("prepareChartStrikeSeries", () => {
     expect(above).toBeGreaterThan(0);
   });
 
-  it("uses flip-anchored profile when cumulative data does not cross at the flip", () => {
+  it("keeps negative profile below flip on raw cumulative data", () => {
     const rows: UwSpotExposureStrikeRow[] = [
       { strike: "330", call_gamma_oi: "0", put_gamma_oi: "-100" },
       { strike: "340", call_gamma_oi: "0", put_gamma_oi: "-50" },
@@ -306,7 +306,7 @@ describe("prepareChartStrikeSeries", () => {
     ];
     const series = buildStrikeSeries(rows, 355);
     const flipSeries = buildFlipSeries(rows, 355);
-    const gammaFlip = computeGammaFlipFromWindow(flipSeries, 355)!;
+    const gammaFlip = computeGammaFlipDeep(flipSeries, 355)!;
     const chart = prepareChartStrikeSeries(series, 355, gammaFlip, flipSeries);
     const below = chart.find((point) => point.strike === 340);
     const above = chart.find((point) => point.strike === 360);

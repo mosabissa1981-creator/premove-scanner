@@ -373,7 +373,28 @@ export function buildCumulativeProfile(points: GexStrikePoint[]): GexStrikePoint
   });
 }
 
-/** Full-chain cumulative gamma profile rebased to zero at gamma flip (OptionCharts-style). */
+/** OptionCharts-style cumulative gamma profile for chart display (no rebase). */
+export function buildChartCumulativeProfile(
+  points: GexStrikePoint[],
+  stockPrice: number | null,
+  profileSource?: GexStrikePoint[],
+): GexStrikePoint[] {
+  const window = filterStrikeWindow(points, stockPrice);
+  if (!window.length) return [];
+
+  const sorted = [...(profileSource ?? points)].sort((a, b) => a.strike - b.strike);
+  const fullCumulative = buildCumulativeProfile(sorted);
+  const windowStrikes = new Set(window.map((point) => point.strike));
+
+  return points
+    .filter((point) => windowStrikes.has(point.strike))
+    .map((point) => ({
+      ...point,
+      profile: interpolateProfileAtStrike(fullCumulative, point.strike) ?? 0,
+    }));
+}
+
+/** Full-chain cumulative gamma profile rebased to zero at gamma flip. */
 export function buildCumulativeProfileAtFlip(
   points: GexStrikePoint[],
   stockPrice: number | null,
@@ -455,11 +476,8 @@ export function prepareChartStrikeSeries(
   gammaFlip: number | null = null,
   profileSource?: GexStrikePoint[],
 ): GexStrikePoint[] {
-  const window = filterStrikeWindow(points, stockPrice);
-  if (!window.length) return [];
-
   if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
-  return buildCumulativeProfileAtFlip(points, stockPrice, gammaFlip, profileSource);
+  return buildChartCumulativeProfile(points, stockPrice, profileSource);
 }
 
 /** All-expiry flip: profile when reliable, OI gamma_flip, deeper vol flip for MSFT-style. */
@@ -845,7 +863,9 @@ export async function fetchGexStudy(
     totals = summarizeStrikeSeries(fullSeries);
   }
 
-  const profileFlip = computeGammaFlipFromWindow(flipSeries, stockPrice);
+  const profileFlip =
+    computeGammaFlipDeep(flipSeries, stockPrice) ??
+    computeGammaFlipFromWindow(flipSeries, stockPrice);
   const oiFlip = resolveGammaFlip(levelsOiRes?.data, stockPrice ?? 0, null);
   const volFlip = useAll ? resolveGammaFlip(levelsVolRes?.data, stockPrice ?? 0, null) : null;
   const levels = levelsOiRes?.data
