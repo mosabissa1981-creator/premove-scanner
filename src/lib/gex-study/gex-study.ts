@@ -1,6 +1,6 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
 import { computeGexLevelsFromUw, isSaneGammaFlip, resolveGammaFlip } from "@/lib/scoring/gex";
-import { expiryKey, selectExpiryRows } from "@/lib/gex-scan/gex-scan";
+import { expiryKey, selectExpiryRows, ymd } from "@/lib/gex-scan/gex-scan";
 import type {
   GexExpiryMode,
   GexStrikePoint,
@@ -25,6 +25,56 @@ function latestClose(candles: UwCandle[]): number | null {
   if (!last?.close) return null;
   const n = parseFloat(last.close);
   return Number.isNaN(n) ? null : n;
+}
+
+/** Last session date from OHLC, or the previous weekday when markets are closed. */
+export function resolveTradingDate(candles: UwCandle[], now = new Date()): string {
+  const last = candles[candles.length - 1];
+  const raw = last?.date ?? last?.end_time ?? last?.start_time;
+  if (raw) return raw.slice(0, 10);
+
+  const d = new Date(now);
+  if (d.getDay() === 0) d.setDate(d.getDate() - 2);
+  if (d.getDay() === 6) d.setDate(d.getDate() - 1);
+  return ymd(d);
+}
+
+export function hasUsableSpotStrikes(rows: UwSpotExposureStrikeRow[]): boolean {
+  let valid = 0;
+  for (const row of rows) {
+    const strike = parseNum(row.strike);
+    if (strike <= 0) continue;
+    if (parseNum(row.call_gamma_oi) !== 0 || parseNum(row.put_gamma_oi) !== 0) valid += 1;
+  }
+  return valid >= 4;
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    batches.push(items.slice(i, i + size));
+  }
+  return batches;
+}
+
+function aggregateSpotRows(rows: UwSpotExposureStrikeRow[]): UwSpotExposureStrikeRow[] {
+  const byStrike = new Map<number, { call: number; put: number }>();
+  for (const row of rows) {
+    const strike = parseNum(row.strike);
+    if (strike <= 0) continue;
+    const call = parseNum(row.call_gamma_oi);
+    const put = parseNum(row.put_gamma_oi);
+    const existing = byStrike.get(strike) ?? { call: 0, put: 0 };
+    byStrike.set(strike, { call: existing.call + call, put: existing.put + put });
+  }
+
+  return [...byStrike.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([strike, gex]) => ({
+      strike: String(strike),
+      call_gamma_oi: String(gex.call),
+      put_gamma_oi: String(gex.put),
+    }));
 }
 
 function readSpotStrikeGex(row: UwSpotExposureStrikeRow): { callGex: number; putGex: number } {
@@ -353,21 +403,17 @@ function scaleGreekRowsToSpotGex(
   }));
 }
 
-async function fetchAllSpotExposures(
+async function fetchSpotByStrike(
   client: UnusualWhalesClient,
   ticker: string,
-  expiry?: string,
+  tradingDate: string,
+  stockPrice: number | null,
 ): Promise<UwSpotExposureStrikeRow[]> {
-  if (expiry) {
-    const res = (await client.spotExposureByExpiryStrike(ticker, [
-      expiry,
-    ])) as UwDataResponse<UwSpotExposureStrikeRow[]>;
-    return res.data ?? [];
-  }
-
   const rows: UwSpotExposureStrikeRow[] = [];
+
   for (let page = 0; page < 20; page++) {
     const res = (await client.spotExposureByStrike(ticker, {
+      date: tradingDate,
       page,
       limit: 500,
     })) as UwDataResponse<UwSpotExposureStrikeRow[]>;
@@ -376,16 +422,111 @@ async function fetchAllSpotExposures(
     rows.push(...batch);
     if (batch.length < 500) break;
   }
-  return rows;
+
+  if (hasUsableSpotStrikes(rows)) return aggregateSpotRows(rows);
+
+  if (stockPrice != null && stockPrice > 0) {
+    const minStrike = Math.max(0, stockPrice * 0.2);
+    const maxStrike = stockPrice * 1.8;
+    const windowRows: UwSpotExposureStrikeRow[] = [];
+    for (let page = 0; page < 20; page++) {
+      const res = (await client.spotExposureByStrike(ticker, {
+        date: tradingDate,
+        minStrike,
+        maxStrike,
+        page,
+        limit: 500,
+      })) as UwDataResponse<UwSpotExposureStrikeRow[]>;
+      const batch = res.data ?? [];
+      if (!batch.length) break;
+      windowRows.push(...batch);
+      if (batch.length < 500) break;
+    }
+    if (hasUsableSpotStrikes(windowRows)) return aggregateSpotRows(windowRows);
+  }
+
+  return [];
+}
+
+async function fetchSpotByExpiryAggregation(
+  client: UnusualWhalesClient,
+  ticker: string,
+  expiries: string[],
+  tradingDate: string,
+): Promise<UwSpotExposureStrikeRow[]> {
+  if (!expiries.length) return [];
+
+  const rows: UwSpotExposureStrikeRow[] = [];
+  for (const batch of chunk(expiries, 12)) {
+    for (let page = 0; page < 10; page++) {
+      const res = (await client.spotExposureByExpiryStrike(ticker, batch, {
+        date: tradingDate,
+        page,
+        limit: 500,
+      })) as UwDataResponse<UwSpotExposureStrikeRow[]>;
+      const pageRows = res.data ?? [];
+      if (!pageRows.length) break;
+      rows.push(...pageRows);
+      if (pageRows.length < 500) break;
+    }
+  }
+
+  const aggregated = aggregateSpotRows(rows);
+  return hasUsableSpotStrikes(aggregated) ? aggregated : [];
+}
+
+async function fetchAllSpotExposures(
+  client: UnusualWhalesClient,
+  ticker: string,
+  options: {
+    expiry?: string;
+    tradingDate: string;
+    expiries: string[];
+    stockPrice: number | null;
+  },
+): Promise<UwSpotExposureStrikeRow[]> {
+  const { expiry, tradingDate, expiries, stockPrice } = options;
+
+  if (expiry) {
+    const rows: UwSpotExposureStrikeRow[] = [];
+    for (let page = 0; page < 10; page++) {
+      const res = (await client.spotExposureByExpiryStrike(ticker, [expiry], {
+        date: tradingDate,
+        page,
+        limit: 500,
+      })) as UwDataResponse<UwSpotExposureStrikeRow[]>;
+      const batch = res.data ?? [];
+      if (!batch.length) break;
+      rows.push(...batch);
+      if (batch.length < 500) break;
+    }
+    const aggregated = aggregateSpotRows(rows);
+    return hasUsableSpotStrikes(aggregated) ? aggregated : [];
+  }
+
+  const byStrike = await fetchSpotByStrike(client, ticker, tradingDate, stockPrice);
+  if (byStrike.length) return byStrike;
+
+  return fetchSpotByExpiryAggregation(client, ticker, expiries, tradingDate);
 }
 
 async function fetchStrikeRowsWithFallback(
   client: UnusualWhalesClient,
   ticker: string,
-  expiry?: string,
+  expiry: string | undefined,
+  options: {
+    tradingDate: string;
+    expiries: string[];
+    stockPrice: number | null;
+  },
 ): Promise<{ rows: UwSpotExposureStrikeRow[]; source: "spot" | "greek" }> {
-  const spotRows = await fetchAllSpotExposures(client, ticker, expiry);
-  if (spotRows.length) return { rows: spotRows, source: "spot" };
+  const spotRows = await fetchAllSpotExposures(client, ticker, {
+    expiry,
+    tradingDate: options.tradingDate,
+    expiries: options.expiries,
+    stockPrice: options.stockPrice,
+  });
+  if (hasUsableSpotStrikes(spotRows)) return { rows: spotRows, source: "spot" };
 
   const greekRes = expiry
     ? ((await client.greekExposureByStrikeExpiry(
@@ -465,11 +606,10 @@ export async function fetchGexStudy(
 ): Promise<GexStudyResult> {
   const useAll = expiry === "all";
 
-  const [exposureRes, ohlcRes, strikePayload, levelsOiRes, levelsVolRes, spotTotalsRes] =
+  const [exposureRes, ohlcRes, levelsOiRes, levelsVolRes, spotTotalsRes] =
     await Promise.all([
     client.greekExposureByExpiry(ticker) as Promise<UwDataResponse<UwGreekExposureExpiryRow[]>>,
     client.ohlc(ticker, "1d", 1) as Promise<UwDataResponse<UwCandle[]>>,
-    fetchStrikeRowsWithFallback(client, ticker, useAll ? undefined : expiry),
     client.gexLevels(ticker, "oi") as Promise<UwDataResponse<UwGexLevels>>,
     useAll
       ? (client.gexLevels(ticker, "vol") as Promise<UwDataResponse<UwGexLevels>>)
@@ -480,6 +620,28 @@ export async function fetchGexStudy(
   ]);
 
   const stockPrice = latestClose(ohlcRes.data ?? []);
+  const tradingDate = resolveTradingDate(ohlcRes.data ?? []);
+  const expiries = (exposureRes.data ?? [])
+    .map((row) => expiryKey(row))
+    .filter(Boolean);
+
+  let spotTotalsData = spotTotalsRes?.data;
+  if (useAll) {
+    const datedSpotTotals = (await client.spotExposures(
+      ticker,
+      tradingDate,
+    )) as UwDataResponse<UwSpotExposureSnapshot[]>;
+    if (datedSpotTotals.data?.length) {
+      spotTotalsData = datedSpotTotals.data;
+    }
+  }
+
+  const strikePayload = await fetchStrikeRowsWithFallback(
+    client,
+    ticker,
+    useAll ? undefined : expiry,
+    { tradingDate, expiries, stockPrice },
+  );
 
   let strikeRows = strikePayload.rows;
   if (strikePayload.source === "greek" && stockPrice != null && stockPrice > 0) {
@@ -495,7 +657,7 @@ export async function fetchGexStudy(
   let fullSeries = buildStrikeSeries(strikeRows, stockPrice);
   let totals = summarizeStrikeSeries(fullSeries);
 
-  const authoritativeNet = useAll ? latestSpotNetGex(spotTotalsRes?.data) : null;
+  const authoritativeNet = useAll ? latestSpotNetGex(spotTotalsData) : null;
   if (authoritativeNet != null) {
     totals = alignTotalsToNetGex(totals, authoritativeNet);
     if (totals.netGex !== 0 && fullSeries.length) {

@@ -210,9 +210,16 @@ export class UnusualWhalesClient {
 
   spotExposureByStrike(
     ticker: string,
-    params: { minStrike?: number; maxStrike?: number; page?: number; limit?: number } = {},
+    params: {
+      date?: string;
+      minStrike?: number;
+      maxStrike?: number;
+      page?: number;
+      limit?: number;
+    } = {},
   ) {
     return this.getCachedWhenNonEmpty(`/api/stock/${ticker}/spot-exposures/strike`, {
+      date: params.date,
       min_strike: params.minStrike,
       max_strike: params.maxStrike,
       page: params.page,
@@ -220,16 +227,34 @@ export class UnusualWhalesClient {
     }, 120_000);
   }
 
-  spotExposures(ticker: string) {
-    return this.getCachedWhenNonEmpty(`/api/stock/${ticker}/spot-exposures`, {}, 120_000);
+  spotExposures(ticker: string, date?: string) {
+    return this.getCachedWhenNonEmpty(
+      `/api/stock/${ticker}/spot-exposures`,
+      { date },
+      120_000,
+    );
   }
 
-  spotExposureByExpiryStrike(ticker: string, expirations: string[]) {
+  spotExposureByExpiryStrike(
+    ticker: string,
+    expirations: string[],
+    params: {
+      date?: string;
+      page?: number;
+      limit?: number;
+      minStrike?: number;
+      maxStrike?: number;
+    } = {},
+  ) {
     const url = new URL(`${BASE_URL}/api/stock/${ticker}/spot-exposures/expiry-strike`);
     for (const expiry of expirations) {
       url.searchParams.append("expirations[]", expiry);
     }
-    url.searchParams.set("limit", "500");
+    if (params.date) url.searchParams.set("date", params.date);
+    if (params.page != null) url.searchParams.set("page", String(params.page));
+    url.searchParams.set("limit", String(params.limit ?? 500));
+    if (params.minStrike != null) url.searchParams.set("min_strike", String(params.minStrike));
+    if (params.maxStrike != null) url.searchParams.set("max_strike", String(params.maxStrike));
     return this.request(url.toString());
   }
 
