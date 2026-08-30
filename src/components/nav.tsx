@@ -19,7 +19,7 @@ export function Nav() {
 
   return (
     <>
-      <header className="w-full min-w-0 overflow-x-clip border-b border-zinc-800 bg-zinc-950/80 backdrop-blur">
+      <header className="relative z-50 w-full min-w-0 overflow-x-clip border-b border-zinc-800 bg-zinc-950/80 backdrop-blur">
         <div className="flex w-full min-w-0 items-center justify-between gap-2 px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
           <Link href="/" className="flex min-w-0 items-center gap-2">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-sm font-bold text-black">
@@ -51,7 +51,7 @@ export function Nav() {
           </Link>
         </div>
 
-        <nav className="flex w-full min-w-0 border-t border-zinc-800 sm:hidden">
+        <nav className="relative z-50 flex w-full min-w-0 border-t border-zinc-800 sm:hidden">
           {links.map((link) => (
             <Link
               key={link.href}
@@ -68,7 +68,7 @@ export function Nav() {
         </nav>
       </header>
 
-      <nav className="hidden w-full gap-1 px-4 pb-2 sm:flex sm:px-6">
+      <nav className="relative z-50 hidden w-full gap-1 px-4 pb-2 sm:flex sm:px-6">
         {links.map((link) => (
           <Link
             key={link.href}

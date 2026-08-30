@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import type { IdeaNote, SectorsPayload, SleeveRow } from "@/lib/scorch-hot/sectors";
 
@@ -129,7 +130,12 @@ export default function ScorchHotPage() {
         </div>
 
         <header className="topbar">
-          <div className="brand">Scorch Hot</div>
+          <div className="topbar-start">
+            <Link href="/" className="back-link">
+              ← PreMove
+            </Link>
+            <div className="brand">Scorch Hot</div>
+          </div>
           <button className="ghost" type="button" onClick={() => void load(true)} disabled={loading}>
             {loading ? "Refreshing…" : "Refresh heat"}
           </button>
