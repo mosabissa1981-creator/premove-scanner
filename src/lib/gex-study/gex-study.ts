@@ -373,28 +373,29 @@ export function buildCumulativeProfile(points: GexStrikePoint[]): GexStrikePoint
   });
 }
 
-/** Full-chain cumulative gamma profile for chart display (OptionCharts-style). */
+/** Full-chain cumulative gamma profile rebased to zero at gamma flip (OptionCharts-style). */
 export function buildCumulativeProfileAtFlip(
   points: GexStrikePoint[],
   stockPrice: number | null,
   gammaFlip: number | null = null,
+  profileSource?: GexStrikePoint[],
 ): GexStrikePoint[] {
-  const sorted = [...points].sort((a, b) => a.strike - b.strike);
-  if (!sorted.length) return [];
-
   const window = filterStrikeWindow(points, stockPrice);
   if (!window.length) return [];
   if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
 
+  const sorted = [...(profileSource ?? points)].sort((a, b) => a.strike - b.strike);
   const fullCumulative = buildCumulativeProfile(sorted);
-  const cumByStrike = new Map(fullCumulative.map((point) => [point.strike, point.profile]));
-  const windowStrikes = new Set(window.map((point) => point.strike));
+  const atFlip = interpolateProfileAtStrike(fullCumulative, gammaFlip) ?? 0;
+  const profileAt = (strike: number) =>
+    (interpolateProfileAtStrike(fullCumulative, strike) ?? 0) - atFlip;
 
-  const chart = sorted
+  const windowStrikes = new Set(window.map((point) => point.strike));
+  const chart = points
     .filter((point) => windowStrikes.has(point.strike))
     .map((point) => ({
       ...point,
-      profile: cumByStrike.get(point.strike) ?? 0,
+      profile: profileAt(point.strike),
     }));
 
   const hasFlipStrike = chart.some((point) => Math.abs(point.strike - gammaFlip) < 1e-6);
@@ -405,7 +406,7 @@ export function buildCumulativeProfileAtFlip(
     callGex: 0,
     putGex: 0,
     netGex: 0,
-    profile: interpolateProfileAtStrike(fullCumulative, gammaFlip) ?? 0,
+    profile: 0,
   };
   return [...chart, anchor].sort((a, b) => a.strike - b.strike);
 }
@@ -452,13 +453,13 @@ export function prepareChartStrikeSeries(
   points: GexStrikePoint[],
   stockPrice: number | null,
   gammaFlip: number | null = null,
-  _source: "spot" | "greek" = "greek",
+  profileSource?: GexStrikePoint[],
 ): GexStrikePoint[] {
   const window = filterStrikeWindow(points, stockPrice);
   if (!window.length) return [];
 
   if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
-  return buildCumulativeProfileAtFlip(points, stockPrice, gammaFlip);
+  return buildCumulativeProfileAtFlip(points, stockPrice, gammaFlip, profileSource);
 }
 
 /** All-expiry flip: profile when reliable, OI gamma_flip, deeper vol flip for MSFT-style. */
@@ -825,6 +826,7 @@ export async function fetchGexStudy(
     .filter((row) => row.expiry)
     .sort((a, b) => a.dte - b.dte);
 
+  let flipSeries = buildFlipSeries(strikeRows, stockPrice);
   let fullSeries = buildStrikeSeries(strikeRows, stockPrice);
   let totals = summarizeStrikeSeries(fullSeries);
 
@@ -834,14 +836,16 @@ export async function fetchGexStudy(
     if (totals.netGex !== 0 && fullSeries.length) {
       const strikeNet = summarizeStrikeSeries(fullSeries).netGex;
       if (strikeNet !== 0) {
-        fullSeries = scaleStrikeSeries(fullSeries, totals.netGex / strikeNet);
+        const factor = totals.netGex / strikeNet;
+        fullSeries = scaleStrikeSeries(fullSeries, factor);
+        flipSeries = scaleStrikeSeries(flipSeries, factor);
       }
     }
   } else if (strikePayload.source === "greek" && stockPrice != null && stockPrice > 0) {
     totals = summarizeStrikeSeries(fullSeries);
   }
 
-  const profileFlip = computeGammaFlipFromWindow(fullSeries, stockPrice);
+  const profileFlip = computeGammaFlipFromWindow(flipSeries, stockPrice);
   const oiFlip = resolveGammaFlip(levelsOiRes?.data, stockPrice ?? 0, null);
   const volFlip = useAll ? resolveGammaFlip(levelsVolRes?.data, stockPrice ?? 0, null) : null;
   const levels = levelsOiRes?.data
@@ -895,7 +899,7 @@ export async function fetchGexStudy(
     putGex: totals.putGex,
     regime,
     flipDistancePct,
-    strikes: prepareChartStrikeSeries(fullSeries, stockPrice, gammaFlip, strikePayload.source),
+    strikes: prepareChartStrikeSeries(fullSeries, stockPrice, gammaFlip, flipSeries),
     availableExpiries,
   };
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCumulativeProfileAtFlip,
   buildFlipAnchoredProfile,
+  buildFlipSeries,
   buildStrikeSeries,
   computeGammaFlip,
   computeGammaFlipDeep,
@@ -201,8 +202,9 @@ describe("buildCumulativeProfileAtFlip", () => {
       { strike: "270", call_gamma_oi: "150", put_gamma_oi: "0" },
     ];
     const series = buildStrikeSeries(rows, 266);
-    const gammaFlip = computeGammaFlipFromWindow(series, 266)!;
-    const chart = buildCumulativeProfileAtFlip(series, 266, gammaFlip);
+    const flipSeries = buildFlipSeries(rows, 266);
+    const gammaFlip = computeGammaFlipFromWindow(flipSeries, 266)!;
+    const chart = buildCumulativeProfileAtFlip(series, 266, gammaFlip, flipSeries);
     expect(interpolateProfileAtStrike(chart, 220)!).toBeLessThan(0);
     expect(interpolateProfileAtStrike(chart, 270)!).toBeGreaterThan(0);
     expect(interpolateProfileAtStrike(chart, gammaFlip)!).toBeCloseTo(0, 0);
@@ -225,7 +227,9 @@ describe("buildCumulativeProfileAtFlip", () => {
       { strike: "290", call_gamma_oi: "80", put_gamma_oi: "0" },
     ];
     const series = buildStrikeSeries(rows, 266);
-    const chart = buildCumulativeProfileAtFlip(series, 266, 238.2);
+    const flipSeries = buildFlipSeries(rows, 266);
+    const gammaFlip = computeGammaFlipFromWindow(flipSeries, 266)!;
+    const chart = buildCumulativeProfileAtFlip(series, 266, gammaFlip, flipSeries);
     const at220 = interpolateProfileAtStrike(chart, 220)!;
     const at245 = interpolateProfileAtStrike(chart, 245)!;
     const at275 = interpolateProfileAtStrike(chart, 275)!;
@@ -282,8 +286,9 @@ describe("prepareChartStrikeSeries", () => {
       { strike: "280", call_gamma_oi: "80", put_gamma_oi: "0" },
     ];
     const series = buildStrikeSeries(rows, 266);
-    const gammaFlip = computeGammaFlipFromWindow(series, 266)!;
-    const chart = prepareChartStrikeSeries(series, 266, gammaFlip, "spot");
+    const flipSeries = buildFlipSeries(rows, 266);
+    const gammaFlip = computeGammaFlipFromWindow(flipSeries, 266)!;
+    const chart = prepareChartStrikeSeries(series, 266, gammaFlip, flipSeries);
     const atFlip = interpolateProfileAtStrike(chart, gammaFlip);
     const below = interpolateProfileAtStrike(chart, 250);
     const above = interpolateProfileAtStrike(chart, 270);
@@ -300,8 +305,9 @@ describe("prepareChartStrikeSeries", () => {
       { strike: "360", call_gamma_oi: "100", put_gamma_oi: "0" },
     ];
     const series = buildStrikeSeries(rows, 355);
-    const gammaFlip = computeGammaFlipFromWindow(series, 355)!;
-    const chart = prepareChartStrikeSeries(series, 355, gammaFlip, "greek");
+    const flipSeries = buildFlipSeries(rows, 355);
+    const gammaFlip = computeGammaFlipFromWindow(flipSeries, 355)!;
+    const chart = prepareChartStrikeSeries(series, 355, gammaFlip, flipSeries);
     const below = chart.find((point) => point.strike === 340);
     const above = chart.find((point) => point.strike === 360);
     expect(below?.profile).toBeLessThan(0);
