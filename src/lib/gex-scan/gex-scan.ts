@@ -303,3 +303,17 @@ export function filterAndSortGexRows(rows: GexScanRow[], minRatio = 1): GexScanR
       return fb - fa;
     });
 }
+
+export type GammaFlipFilter = "all" | "above" | "below" | "near";
+
+export function filterByGammaFlip(rows: GexScanRow[], filter: GammaFlipFilter): GexScanRow[] {
+  if (filter === "all") return rows;
+  return rows.filter((row) => {
+    if (filter === "above") return row.regime === "positive";
+    if (filter === "below") return row.regime === "negative";
+    if (filter === "near") {
+      return row.flipDistancePct != null && Math.abs(row.flipDistancePct) <= 2;
+    }
+    return true;
+  });
+}

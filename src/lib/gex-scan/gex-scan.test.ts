@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   aggregateGex,
   filterAndSortGexRows,
+  filterByGammaFlip,
   gexSides,
   parseTickers,
   ratioLabel,
@@ -112,6 +113,50 @@ describe("ratio helpers", () => {
       2,
     );
     expect(results.map((r) => r.ticker)).toEqual(["B", "A"]);
+  });
+
+  it("filters by gamma flip regime", () => {
+    const rows = [
+      {
+        ticker: "A",
+        source: "unusual-whales" as const,
+        expiry: "all",
+        callGex: 100,
+        putGex: -50,
+        netGex: 50,
+        dominant: "CALL" as const,
+        callWall: null,
+        putWall: null,
+        gammaFlip: 100,
+        gammaMagnet: null,
+        stockPrice: 105,
+        regime: "positive" as const,
+        flipDistancePct: 4.76,
+        ratio: "2 : 1",
+        imbalance: 2,
+      },
+      {
+        ticker: "B",
+        source: "unusual-whales" as const,
+        expiry: "all",
+        callGex: 300,
+        putGex: -100,
+        netGex: 200,
+        dominant: "CALL" as const,
+        callWall: null,
+        putWall: null,
+        gammaFlip: 120,
+        gammaMagnet: null,
+        stockPrice: 110,
+        regime: "negative" as const,
+        flipDistancePct: -8.33,
+        ratio: "3 : 1",
+        imbalance: 3,
+      },
+    ];
+    expect(filterByGammaFlip(rows, "above").map((r) => r.ticker)).toEqual(["A"]);
+    expect(filterByGammaFlip(rows, "below").map((r) => r.ticker)).toEqual(["B"]);
+    expect(filterByGammaFlip(rows, "near")).toEqual([]);
   });
 });
 
