@@ -276,7 +276,7 @@ describe("computeNetGexBarFlip", () => {
 });
 
 describe("prepareChartStrikeSeries", () => {
-  it("rebases profile to zero at gamma flip for OptionCharts-style display", () => {
+  it("uses raw cumulative profile that crosses zero at gamma flip", () => {
     const rows: UwSpotExposureStrikeRow[] = [
       { strike: "240", call_gamma_oi: "0", put_gamma_oi: "-100" },
       { strike: "250", call_gamma_oi: "0", put_gamma_oi: "-50" },
@@ -297,7 +297,7 @@ describe("prepareChartStrikeSeries", () => {
     expect(above).toBeGreaterThan(0);
   });
 
-  it("keeps negative profile below flip after rebase", () => {
+  it("keeps negative profile below flip on raw cumulative data", () => {
     const rows: UwSpotExposureStrikeRow[] = [
       { strike: "330", call_gamma_oi: "0", put_gamma_oi: "-100" },
       { strike: "340", call_gamma_oi: "0", put_gamma_oi: "-50" },

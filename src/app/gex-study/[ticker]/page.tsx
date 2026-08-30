@@ -49,7 +49,7 @@ export default function GexStudyPage({ params }: { params: Promise<{ ticker: str
   const [ticker, setTicker] = useState<string | null>(null);
   const [study, setStudy] = useState<GexStudyResult | null>(null);
   const [selectedExpiry, setSelectedExpiry] = useState<string>("");
-  const [mode, setMode] = useState<GexExpiryMode>("weekly");
+  const [mode, setMode] = useState<GexExpiryMode>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,7 +101,7 @@ export default function GexStudyPage({ params }: { params: Promise<{ ticker: str
   useEffect(() => {
     if (!ticker) return;
     const expiryParam = searchParams.get("expiry");
-    const modeParam = (searchParams.get("mode") as GexExpiryMode | null) ?? "weekly";
+    const modeParam = (searchParams.get("mode") as GexExpiryMode | null) ?? "all";
     loadStudy(ticker, expiryParam ?? undefined, expiryParam ? undefined : modeParam);
   }, [ticker, searchParams, loadStudy]);
 
