@@ -149,9 +149,14 @@ export function GexStrikeChart({
     setTooltip(null);
   }, [stockPrice, strikes]);
 
+  const chartDataKey = useMemo(() => {
+    if (!strikes.length) return "empty";
+    return `${strikes.length}:${strikes[0]?.strike}:${strikes[strikes.length - 1]?.strike}:${stockPrice ?? ""}`;
+  }, [strikes, stockPrice]);
+
   useEffect(() => {
     resetView();
-  }, [strikes, stockPrice, putWall, gammaFlip, callWall, resetView]);
+  }, [chartDataKey, resetView]);
 
   const showTooltipAt = useCallback(
     (clientX: number, clientY: number) => {
@@ -216,11 +221,14 @@ export function GexStrikeChart({
         const touch = e.touches[0];
         const dx = touch.clientX - g.startClientX;
         const dy = touch.clientY - g.startClientY;
-        if (Math.hypot(dx, dy) > TAP_THRESHOLD_PX) {
-          g.mode = "pan";
-          g.moved = true;
-          g.lastClientX = touch.clientX;
-          setTooltip(null);
+        if (Math.abs(dx) > 3 || Math.abs(dy) > TAP_THRESHOLD_PX) {
+          if (Math.abs(dx) >= Math.abs(dy)) {
+            g.mode = "pan";
+            g.moved = true;
+            g.lastClientX = touch.clientX;
+            setTooltip(null);
+            e.preventDefault();
+          }
         }
       }
 
@@ -268,7 +276,7 @@ export function GexStrikeChart({
       gestureRef.current.mode = "none";
     };
 
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
     el.addEventListener("touchmove", onTouchMove, { passive: false });
     el.addEventListener("touchend", onTouchEnd);
     el.addEventListener("touchcancel", onTouchEnd);
