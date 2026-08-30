@@ -236,12 +236,13 @@ export function flipIndexForPrice(raw: RawSimulatedPoint[], gammaFlip: number): 
 }
 
 /**
- * Steps 4–5: OptionCharts rebase-at-flip cumulative profile.
+ * Rebase-at-flip profile: subtract isolated net GEX at the flip from every point.
  *
- * 1. `rawValues[i]` = isolated net GEX at spot/strike i (not a running sum).
- * 2. Forward from flip index:  cum[i] = cum[i-1] + raw[i]
- * 3. Backward from flip index: cum[i] = cum[i+1] + raw[i]  (accumulates negative below flip)
- * 4. Subtract interpolated cum at the exact gamma flip → profile crosses $0 at flip.
+ * OptionCharts treats each x-axis point as total market GEX at that hypothetical spot
+ * (not a running sum of dollar values). Rebasing guarantees profile = $0 at flip.
+ *
+ * Equivalent to forward/backward cumulative of spot-to-spot *deltas*, not summing
+ * the raw totals themselves (which would stack $183M bars into a $1B cliff).
  */
 export function buildRebaseAtFlipFromValues(
   spots: number[],
@@ -251,31 +252,15 @@ export function buildRebaseAtFlipFromValues(
   const n = spots.length;
   if (!n || !Number.isFinite(gammaFlip)) return [];
 
-  let flipIndex = 0;
-  for (let i = 0; i < n; i++) {
-    if (spots[i] <= gammaFlip) flipIndex = i;
-  }
-
-  const cumulative = new Array<number>(n).fill(0);
-  cumulative[flipIndex] = rawValues[flipIndex] ?? 0;
-
-  for (let i = flipIndex + 1; i < n; i++) {
-    cumulative[i] = cumulative[i - 1] + (rawValues[i] ?? 0);
-  }
-
-  for (let i = flipIndex - 1; i >= 0; i--) {
-    cumulative[i] = cumulative[i + 1] + (rawValues[i] ?? 0);
-  }
-
-  const anchor = interpolateSeriesAtSpot(
+  const rawAtFlip = interpolateSeriesAtSpot(
     spots.map((simulatedSpot) => ({ simulatedSpot })),
-    cumulative,
+    rawValues,
     gammaFlip,
   );
 
   return spots.map((simulatedSpot, i) => ({
     simulatedSpot,
-    profile: cumulative[i] - anchor,
+    profile: (rawValues[i] ?? 0) - rawAtFlip,
     rawNetGex: rawValues[i],
   }));
 }

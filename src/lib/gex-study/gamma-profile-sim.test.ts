@@ -66,25 +66,20 @@ describe("buildRebaseAtFlipProfile", () => {
     expect(above!).toBeGreaterThan(0);
   });
 
-  it("uses forward/backward running sums on raw values then subtracts flip anchor", () => {
+  it("does not stack bar-sized dollar values into a billion-dollar cliff", () => {
     const raw = [
-      { simulatedSpot: 200, rawNetGex: -100 },
-      { simulatedSpot: 220, rawNetGex: -50 },
-      { simulatedSpot: 240, rawNetGex: 0 },
-      { simulatedSpot: 260, rawNetGex: 80 },
-      { simulatedSpot: 280, rawNetGex: 120 },
+      { simulatedSpot: 240, rawNetGex: -20_000_000 },
+      { simulatedSpot: 248.42, rawNetGex: 0 },
+      { simulatedSpot: 260, rawNetGex: 50_000_000 },
+      { simulatedSpot: 265, rawNetGex: 183_000_000 },
+      { simulatedSpot: 270, rawNetGex: 103_000_000 },
     ];
-    const flip = 240;
-    const flipIndex = flipIndexForPrice(raw, flip);
-    expect(flipIndex).toBe(2);
-
-    const profile = buildRebaseAtFlipProfile(raw, flip);
-    expect(interpolateSimulatedProfile(profile, flip)).toBeCloseTo(0, 6);
-    expect(profile[0].profile).toBeLessThan(0);
-    expect(profile[profile.length - 1].profile).toBeGreaterThan(0);
-
-    // Forward: 260 = 0 + 80, 280 = 80 + 120 = 200 (before anchor subtraction)
-    expect(profile[3].profile).toBeGreaterThan(profile[2].profile);
+    const profile = buildRebaseAtFlipProfile(raw, 248.42);
+    const at265 = interpolateSimulatedProfile(profile, 265)!;
+    const at270 = interpolateSimulatedProfile(profile, 270)!;
+    expect(at265).toBeCloseTo(183_000_000, -3);
+    expect(at270).toBeCloseTo(103_000_000, -3);
+    expect(at270).toBeLessThan(500_000_000);
   });
 });
 
