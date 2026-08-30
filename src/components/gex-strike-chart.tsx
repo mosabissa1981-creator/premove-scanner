@@ -4,16 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GexStrikePoint } from "@/lib/unusualwhales/types";
 import {
   clientXToStrike,
-  DEFAULT_Y_SCALE,
   initialStrikeViewport,
   isViewportZoomed,
-  isYScaleZoomed,
   nearestStrike,
   panStrikeViewport,
   strikeBounds,
   strikesInViewport,
   zoomStrikeViewport,
-  zoomYScale,
   type StrikeViewport,
 } from "@/lib/gex-study/gex-chart-viewport";
 
@@ -21,9 +18,6 @@ const CHART_WIDTH = 720;
 const CHART_HEIGHT = 380;
 const PAD = { top: 44, right: 82, bottom: 54, left: 82 };
 const BAR_HEIGHT_RATIO = 0.48;
-const MIN_CHART_HEIGHT = 220;
-const MAX_CHART_HEIGHT = 620;
-const DEFAULT_CHART_HEIGHT = 440;
 const AXIS_FONT = 22;
 const LABEL_FONT = 20;
 const VALUE_FONT = 22;
@@ -62,6 +56,13 @@ interface GexStrikeChartProps {
   callWall: number | null;
 }
 
+function touchDistance(touches: TouchList): number {
+  if (touches.length < 2) return 0;
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.hypot(dx, dy);
+}
+
 function touchCenter(touches: TouchList): { x: number; y: number } {
   if (touches.length < 2) {
     return { x: touches[0].clientX, y: touches[0].clientY };
@@ -70,16 +71,6 @@ function touchCenter(touches: TouchList): { x: number; y: number } {
     x: (touches[0].clientX + touches[1].clientX) / 2,
     y: (touches[0].clientY + touches[1].clientY) / 2,
   };
-}
-
-function touchSpanX(touches: TouchList): number {
-  if (touches.length < 2) return 0;
-  return Math.abs(touches[0].clientX - touches[1].clientX);
-}
-
-function touchSpanY(touches: TouchList): number {
-  if (touches.length < 2) return 0;
-  return Math.abs(touches[0].clientY - touches[1].clientY);
 }
 
 export function GexStrikeChart({
@@ -94,31 +85,22 @@ export function GexStrikeChart({
   const [viewport, setViewport] = useState<StrikeViewport>(() =>
     initialStrikeViewport(strikes, stockPrice),
   );
-  const [yScale, setYScale] = useState(DEFAULT_Y_SCALE);
-  const [chartHeight, setChartHeight] = useState(DEFAULT_CHART_HEIGHT);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const viewportRef = useRef(viewport);
-  const yScaleRef = useRef(yScale);
   const gestureRef = useRef<{
-    mode: "none" | "pan" | "pinch" | "tap" | "resize";
+    mode: "none" | "pan" | "pinch" | "tap";
     startViewport: StrikeViewport;
-    startYScale: number;
-    startSpanX: number;
-    startSpanY: number;
+    startDist: number;
     startClientX: number;
     startClientY: number;
-    startChartHeight: number;
     lastClientX: number;
     moved: boolean;
   }>({
     mode: "none",
     startViewport: { min: 0, max: 1 },
-    startYScale: DEFAULT_Y_SCALE,
-    startSpanX: 0,
-    startSpanY: 0,
+    startDist: 0,
     startClientX: 0,
     startClientY: 0,
-    startChartHeight: DEFAULT_CHART_HEIGHT,
     lastClientX: 0,
     moved: false,
   });
@@ -131,21 +113,10 @@ export function GexStrikeChart({
     });
   }, []);
 
-  const updateYScale = useCallback((next: number | ((prev: number) => number)) => {
-    setYScale((prev) => {
-      const resolved = typeof next === "function" ? next(prev) : next;
-      yScaleRef.current = resolved;
-      return resolved;
-    });
-  }, []);
-
   const resetView = useCallback(() => {
     const next = initialStrikeViewport(strikes, stockPrice);
     viewportRef.current = next;
     setViewport(next);
-    yScaleRef.current = DEFAULT_Y_SCALE;
-    setYScale(DEFAULT_Y_SCALE);
-    setChartHeight(DEFAULT_CHART_HEIGHT);
     setTooltip(null);
   }, [stockPrice, strikes]);
 
@@ -181,10 +152,8 @@ export function GexStrikeChart({
 
       if (e.touches.length === 2) {
         g.mode = "pinch";
-        g.startSpanX = touchSpanX(e.touches);
-        g.startSpanY = touchSpanY(e.touches);
+        g.startDist = touchDistance(e.touches);
         g.startViewport = vp;
-        g.startYScale = yScaleRef.current;
         g.moved = false;
         setTooltip(null);
         return;
@@ -206,18 +175,11 @@ export function GexStrikeChart({
 
       if (g.mode === "pinch" && e.touches.length >= 2) {
         e.preventDefault();
-        const spanX = touchSpanX(e.touches);
-        const spanY = touchSpanY(e.touches);
-        if (g.startSpanX > 8) {
-          const scaleX = spanX / g.startSpanX;
-          const center = touchCenter(e.touches);
-          const focal = clientXToStrike(center.x, rect, g.startViewport);
-          updateViewport(zoomStrikeViewport(g.startViewport, scaleX, focal, bounds));
-        }
-        if (g.startSpanY > 8) {
-          const scaleY = spanY / g.startSpanY;
-          updateYScale(zoomYScale(g.startYScale, scaleY));
-        }
+        if (g.startDist <= 0) return;
+        const scale = touchDistance(e.touches) / g.startDist;
+        const center = touchCenter(e.touches);
+        const focal = clientXToStrike(center.x, rect, g.startViewport);
+        updateViewport(zoomStrikeViewport(g.startViewport, scale, focal, bounds));
         return;
       }
 
@@ -294,69 +256,19 @@ export function GexStrikeChart({
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [bounds, showTooltipAt, updateViewport, updateYScale]);
-
-  useEffect(() => {
-    const onResizeMove = (clientY: number) => {
-      const g = gestureRef.current;
-      if (g.mode !== "resize") return;
-      const delta = clientY - g.startClientY;
-      setChartHeight(
-        Math.max(MIN_CHART_HEIGHT, Math.min(MAX_CHART_HEIGHT, g.startChartHeight + delta)),
-      );
-    };
-
-    const onMouseMove = (e: MouseEvent) => onResizeMove(e.clientY);
-    const onTouchMove = (e: TouchEvent) => {
-      if (gestureRef.current.mode === "resize" && e.touches[0]) {
-        e.preventDefault();
-        onResizeMove(e.touches[0].clientY);
-      }
-    };
-    const onEnd = () => {
-      if (gestureRef.current.mode === "resize") {
-        gestureRef.current.mode = "none";
-      }
-    };
-
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onEnd);
-    window.addEventListener("touchmove", onTouchMove, { passive: false });
-    window.addEventListener("touchend", onEnd);
-    window.addEventListener("touchcancel", onEnd);
-
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onEnd);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", onEnd);
-      window.removeEventListener("touchcancel", onEnd);
-    };
-  }, []);
+  }, [bounds, showTooltipAt, updateViewport]);
 
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
       if (!containerRef.current) return;
       e.preventDefault();
-      const scale = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-      if (e.shiftKey) {
-        updateYScale(zoomYScale(yScaleRef.current, scale));
-        return;
-      }
       const rect = containerRef.current.getBoundingClientRect();
       const focal = clientXToStrike(e.clientX, rect, viewportRef.current);
+      const scale = e.deltaY < 0 ? 1.1 : 1 / 1.1;
       updateViewport(zoomStrikeViewport(viewportRef.current, scale, focal, bounds));
     },
-    [bounds, updateViewport, updateYScale],
+    [bounds, updateViewport],
   );
-
-  const onResizeStart = useCallback((clientY: number) => {
-    const g = gestureRef.current;
-    g.mode = "resize";
-    g.startClientY = clientY;
-    g.startChartHeight = chartHeight;
-    setTooltip(null);
-  }, [chartHeight]);
 
   const onBarClick = useCallback(
     (point: GexStrikePoint, e: React.MouseEvent<SVGGElement>) => {
@@ -398,7 +310,7 @@ export function GexStrikeChart({
     PAD.left + ((strike - strikeMin) / strikeSpan) * plotW;
   const yForBar = (netGex: number) => {
     const zeroY = PAD.top + plotH / 2;
-    const half = plotH * BAR_HEIGHT_RATIO * yScale;
+    const half = plotH * BAR_HEIGHT_RATIO;
     return zeroY - (netGex / barMax) * half;
   };
   const yForProfile = (profile: number) =>
@@ -425,12 +337,11 @@ export function GexStrikeChart({
 
   const yTicks = [-barMax, -barMax / 2, 0, barMax / 2, barMax];
   const profileTicks = [profileMin, profileMax];
-  const zoomed =
-    isViewportZoomed(viewport, bounds) ||
-    isYScaleZoomed(yScale) ||
-    chartHeight !== DEFAULT_CHART_HEIGHT;
+  const zoomed = isViewportZoomed(viewport, bounds);
 
-  const xTickStep = strikeSpan > 30 ? 10 : strikeSpan > 15 ? 5 : 2;
+  const minLabelSpacing = 56;
+  const maxXTicks = Math.max(3, Math.floor(plotW / minLabelSpacing));
+  const xTickStep = Math.max(1, Math.ceil(strikeSpan / maxXTicks / 5) * 5);
   const xTicks: number[] = [];
   const firstTick = Math.ceil(strikeMin / xTickStep) * xTickStep;
   for (let t = firstTick; t <= strikeMax; t += xTickStep) {
@@ -440,7 +351,7 @@ export function GexStrikeChart({
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-950/60">
       <div className="flex flex-col gap-2 border-b border-zinc-800 px-3 py-3 text-sm text-zinc-400 sm:flex-row sm:items-center sm:justify-between sm:text-xs">
-        <span>Pinch to zoom strikes · Pinch vertically to stretch bars · Drag bottom edge to resize · Tap a bar for details</span>
+        <span>Pinch to zoom · Drag to pan · Tap a bar for details</span>
         {zoomed && (
           <button
             type="button"
@@ -454,8 +365,8 @@ export function GexStrikeChart({
 
       <div
         ref={containerRef}
-        className="relative w-full cursor-grab select-none active:cursor-grabbing"
-        style={{ height: chartHeight, touchAction: "none" }}
+        className="relative h-[440px] w-full cursor-grab select-none active:cursor-grabbing sm:h-[340px]"
+        style={{ touchAction: "none" }}
         onWheel={onWheel}
         onDoubleClick={resetView}
       >
@@ -556,8 +467,9 @@ export function GexStrikeChart({
             strokeLinejoin="round"
           />
 
-          {levels.map((level) => {
+          {levels.map((level, index) => {
             const x = xForStrike(level.value);
+            const labelOffset = (index - (levels.length - 1) / 2) * 18;
             return (
               <g key={level.label}>
                 <line
@@ -569,7 +481,14 @@ export function GexStrikeChart({
                   strokeWidth={1.5}
                   strokeDasharray="5 4"
                 />
-                <text x={x} y={PAD.top - 12} textAnchor="middle" fill={level.color} fontSize={LABEL_FONT} fontWeight="700">
+                <text
+                  x={x}
+                  y={PAD.top - 12 + labelOffset}
+                  textAnchor="middle"
+                  fill={level.color}
+                  fontSize={LABEL_FONT}
+                  fontWeight="700"
+                >
                   {level.label}
                 </text>
                 <text x={x} y={CHART_HEIGHT - 12} textAnchor="middle" fill={level.color} fontSize={VALUE_FONT} fontWeight="700">
@@ -644,23 +563,6 @@ export function GexStrikeChart({
           </div>
         )}
       </div>
-
-      <button
-        type="button"
-        aria-label="Drag to resize chart height"
-        className="flex w-full cursor-ns-resize items-center justify-center border-t border-zinc-800 py-2 text-zinc-500 hover:bg-zinc-900/80 hover:text-zinc-300"
-        onMouseDown={(e) => {
-          e.preventDefault();
-          onResizeStart(e.clientY);
-        }}
-        onTouchStart={(e) => {
-          if (e.touches[0]) {
-            onResizeStart(e.touches[0].clientY);
-          }
-        }}
-      >
-        <span className="h-1 w-10 rounded-full bg-zinc-600" />
-      </button>
 
       <div className="flex flex-wrap gap-3 border-t border-zinc-800 px-3 py-3 text-sm text-zinc-300 sm:text-xs sm:text-zinc-400">
         <span className="inline-flex items-center gap-1.5">

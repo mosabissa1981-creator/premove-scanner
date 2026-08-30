@@ -7,9 +7,6 @@ import {
   strikeBounds,
   strikesInViewport,
   zoomStrikeViewport,
-  zoomYScale,
-  clampYScale,
-  isYScaleZoomed,
 } from "@/lib/gex-study/gex-chart-viewport";
 
 const points: GexStrikePoint[] = Array.from({ length: 21 }, (_, i) => {
@@ -45,13 +42,5 @@ describe("strike viewport helpers", () => {
     const visible = strikesInViewport(points, vp);
     expect(visible.every((p) => p.strike >= 60 && p.strike <= 70)).toBe(true);
     expect(nearestStrike(visible, 63)?.strike).toBe(62);
-  });
-
-  it("clamps and zooms vertical scale", () => {
-    expect(clampYScale(0.1)).toBe(0.25);
-    expect(clampYScale(10)).toBe(4);
-    expect(zoomYScale(1, 2)).toBe(2);
-    expect(isYScaleZoomed(1.2)).toBe(true);
-    expect(isYScaleZoomed(1)).toBe(false);
   });
 });
