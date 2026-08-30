@@ -200,7 +200,7 @@ function interpolateSeriesAtSpot(
   return values[last];
 }
 
-/** Step 2: rising zero crossing of raw Net GEX below spot. */
+/** Step 2: deepest rising zero crossing of raw Net GEX below spot. */
 export function gammaFlipFromRawProfile(
   raw: RawSimulatedPoint[],
   stockPrice: number,
@@ -209,20 +209,24 @@ export function gammaFlipFromRawProfile(
 
   const sorted = [...raw].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
   const minStrike = stockPrice * 0.45;
+  let deepest: number | null = null;
 
-  for (let i = sorted.length - 1; i >= 1; i--) {
+  for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1];
     const curr = sorted[i];
     if (curr.simulatedSpot > stockPrice || prev.simulatedSpot < minStrike) continue;
     if (prev.rawNetGex <= 0 && curr.rawNetGex >= 0) {
       const span = curr.rawNetGex - prev.rawNetGex;
-      if (span === 0) return curr.simulatedSpot;
-      const ratio = -prev.rawNetGex / span;
-      return prev.simulatedSpot + ratio * (curr.simulatedSpot - prev.simulatedSpot);
+      const flip =
+        span === 0
+          ? curr.simulatedSpot
+          : prev.simulatedSpot +
+            (-prev.rawNetGex / span) * (curr.simulatedSpot - prev.simulatedSpot);
+      if (deepest == null || flip < deepest) deepest = flip;
     }
   }
 
-  return null;
+  return deepest;
 }
 
 /** Step 3: index of the last simulated spot at or below the gamma flip price. */
@@ -328,20 +332,24 @@ export function gammaFlipFromSimulatedProfile(
 
   const sorted = [...profile].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
   const minStrike = stockPrice * 0.45;
+  let deepest: number | null = null;
 
-  for (let i = sorted.length - 1; i >= 1; i--) {
+  for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1];
     const curr = sorted[i];
     if (curr.simulatedSpot > stockPrice || prev.simulatedSpot < minStrike) continue;
     if (prev.profile <= 0 && curr.profile >= 0) {
       const span = curr.profile - prev.profile;
-      if (span === 0) return curr.simulatedSpot;
-      const ratio = -prev.profile / span;
-      return prev.simulatedSpot + ratio * (curr.simulatedSpot - prev.simulatedSpot);
+      const flip =
+        span === 0
+          ? curr.simulatedSpot
+          : prev.simulatedSpot +
+            (-prev.profile / span) * (curr.simulatedSpot - prev.simulatedSpot);
+      if (deepest == null || flip < deepest) deepest = flip;
     }
   }
 
-  return null;
+  return deepest;
 }
 
 /** Merge dense simulated profile with bar strikes for a smooth curve + accurate tooltips. */

@@ -1179,7 +1179,7 @@ function buildSimulatedChartStrikes(
   if (!raw.length) return { strikes: bars, simulatedFlip: null, usedSimulation: false };
 
   const simulatedFlip = gammaFlipFromRawProfile(raw, stockPrice);
-  const anchorFlip = gammaFlip ?? simulatedFlip;
+  const anchorFlip = simulatedFlip ?? gammaFlip;
   if (anchorFlip == null) return { strikes: bars, simulatedFlip, usedSimulation: false };
 
   const profile = simulateGammaProfile(legs, stockPrice, {
