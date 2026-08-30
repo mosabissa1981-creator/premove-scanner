@@ -215,26 +215,26 @@ describe("prepareChartStrikeSeries", () => {
 
 describe("pickAllExpiryGammaFlip", () => {
   it("uses the ATM profile flip for TSLA instead of a deep junk crossing", () => {
-    const flip = pickAllExpiryGammaFlip(344.28, 103.85, 103.85, 348.75);
+    const flip = pickAllExpiryGammaFlip(344.28, 344.28, 336.4, 348.75);
     expect(flip).toBeCloseTo(344.28, 1);
   });
 
-  it("uses UW levels when profile flip is unavailable", () => {
-    const flip = pickAllExpiryGammaFlip(null, 344.28, null, 348.75);
+  it("uses UW OI flip when profile flip is unavailable", () => {
+    const flip = pickAllExpiryGammaFlip(null, 344.28, 336.4, 348.75);
     expect(flip).toBeCloseTo(344.28, 1);
   });
 
   it("prefers UW levels when profile is a deep outlier on greek fallback data", () => {
-    const flip = pickAllExpiryGammaFlip(230, 344.28, null, 348.75);
+    const flip = pickAllExpiryGammaFlip(230, 344.28, 336.4, 348.75);
     expect(flip).toBeCloseTo(344.28, 1);
   });
 
-  it("prefers the deeper UW flip for MSFT when profile is nearer to spot", () => {
-    const flip = pickAllExpiryGammaFlip(492.51, 404.27, 464.68, 513.15);
+  it("prefers the deeper vol flip for MSFT when OI profile is nearer to spot", () => {
+    const flip = pickAllExpiryGammaFlip(492.51, 492.51, 404.27, 513.15);
     expect(flip).toBeCloseTo(404.27, 1);
   });
 
-  it("keeps the deeper NVDA flip when both profile and levels are valid", () => {
+  it("keeps the deeper NVDA flip when both profile and OI are valid", () => {
     const flip = pickAllExpiryGammaFlip(216.43, 199.77, null, 217.55);
     expect(flip).toBeCloseTo(199.77, 1);
   });

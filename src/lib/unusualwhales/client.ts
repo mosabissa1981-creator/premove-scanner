@@ -192,8 +192,8 @@ export class UnusualWhalesClient {
     return this.get(`/api/stock/${ticker}/flow-alerts`, { limit }, 30_000);
   }
 
-  gexLevels(ticker: string, source: "oi" | "vol" = "oi") {
-    return this.get(`/api/stock/${ticker}/gex-levels`, { source }, 120_000);
+  gexLevels(ticker: string, source: "oi" | "vol" = "oi", date?: string) {
+    return this.get(`/api/stock/${ticker}/gex-levels`, { source, date }, 120_000);
   }
 
   greekExposureByExpiry(ticker: string) {
