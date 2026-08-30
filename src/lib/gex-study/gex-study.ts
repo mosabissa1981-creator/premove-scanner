@@ -368,6 +368,36 @@ export function buildCumulativeProfile(points: GexStrikePoint[]): GexStrikePoint
   });
 }
 
+/** Cumulative gamma profile rebased to zero at the gamma flip (reflects bar volume). */
+export function buildCumulativeProfileAtFlip(
+  points: GexStrikePoint[],
+  stockPrice: number | null,
+  gammaFlip: number | null,
+): GexStrikePoint[] {
+  const window = filterStrikeWindow(points, stockPrice);
+  if (!window.length) return [];
+  if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
+
+  const cumulative = buildCumulativeProfile(window);
+  const atFlip = interpolateProfileAtStrike(cumulative, gammaFlip) ?? 0;
+  const rebased = cumulative.map((point) => ({
+    ...point,
+    profile: point.profile - atFlip,
+  }));
+
+  const hasFlipStrike = rebased.some((point) => Math.abs(point.strike - gammaFlip) < 1e-6);
+  if (hasFlipStrike) return rebased;
+
+  const anchor: GexStrikePoint = {
+    strike: gammaFlip,
+    callGex: 0,
+    putGex: 0,
+    netGex: 0,
+    profile: 0,
+  };
+  return [...rebased, anchor].sort((a, b) => a.strike - b.strike);
+}
+
 /** Gamma profile anchored at zero on the flip strike (negative below, positive above). */
 export function buildFlipAnchoredProfile(
   points: GexStrikePoint[],
@@ -416,7 +446,7 @@ export function prepareChartStrikeSeries(
   if (!window.length) return [];
 
   if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
-  return buildFlipAnchoredProfile(points, stockPrice, gammaFlip);
+  return buildCumulativeProfileAtFlip(points, stockPrice, gammaFlip);
 }
 
 /** All-expiry flip: profile when reliable, OI gamma_flip, deeper vol flip for MSFT-style. */
