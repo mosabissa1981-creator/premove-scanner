@@ -80,6 +80,16 @@ export interface UwGexLevels {
   put_wall: string | null;
   gamma_flip: string | null;
   gamma_magnet: string | null;
+  nearby_flips?: string[] | null;
+}
+
+/** Ticker-level spot GEX snapshot (1-min series, latest = index 0). */
+export interface UwSpotExposureSnapshot {
+  gamma_per_one_percent_move_oi: string;
+  gamma_per_one_percent_move_vol?: string;
+  gamma_per_one_percent_move_dir?: string;
+  price: string;
+  time: string;
 }
 
 export interface UwGreekExposureExpiryRow {

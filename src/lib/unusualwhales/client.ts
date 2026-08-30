@@ -199,6 +199,10 @@ export class UnusualWhalesClient {
     }, 120_000);
   }
 
+  spotExposures(ticker: string) {
+    return this.get(`/api/stock/${ticker}/spot-exposures`, {}, 120_000);
+  }
+
   spotExposureByExpiryStrike(ticker: string, expirations: string[]) {
     const url = new URL(`${BASE_URL}/api/stock/${ticker}/spot-exposures/expiry-strike`);
     for (const expiry of expirations) {

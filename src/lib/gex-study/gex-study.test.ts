@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildStrikeSeries,
   computeGammaFlip,
+  computeGammaFlipFromWindow,
   computeWallsFromSeries,
   filterStrikeWindow,
   summarizeStrikeSeries,
@@ -65,6 +66,23 @@ describe("computeGammaFlip", () => {
     expect(flip).not.toBeNull();
     expect(flip!).toBeGreaterThan(200);
     expect(flip!).toBeLessThan(210);
+  });
+});
+
+describe("computeGammaFlipFromWindow", () => {
+  it("finds the rising flip below spot inside the ATM window", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "5", call_gamma_oi: "0", put_gamma_oi: "-100" },
+      { strike: "10", call_gamma_oi: "200", put_gamma_oi: "0" },
+      { strike: "180", call_gamma_oi: "0", put_gamma_oi: "-500" },
+      { strike: "200", call_gamma_oi: "500", put_gamma_oi: "0" },
+      { strike: "220", call_gamma_oi: "100", put_gamma_oi: "-50" },
+    ];
+    const series = buildStrikeSeries(rows);
+    const flip = computeGammaFlipFromWindow(series, 217.55);
+    expect(flip).not.toBeNull();
+    expect(flip!).toBeGreaterThan(190);
+    expect(flip!).toBeLessThan(205);
   });
 });
 
