@@ -203,10 +203,12 @@ describe("buildFlipAnchoredProfile", () => {
     ];
     const series = buildStrikeSeries(rows, 355);
     const chart = buildFlipAnchoredProfile(series, 355, 345);
-    const flipPoint = chart.find((point) => point.strike === 340);
+    const below = chart.find((point) => point.strike === 340);
     const above = chart.find((point) => point.strike === 360);
-    expect(flipPoint?.profile).toBeLessThan(0);
+    const anchor = chart.find((point) => Math.abs(point.strike - 345) < 1e-6);
+    expect(below?.profile).toBeLessThan(0);
     expect(above?.profile).toBeGreaterThan(0);
+    expect(anchor?.profile).toBe(0);
   });
 });
 
@@ -224,6 +226,8 @@ describe("prepareChartStrikeSeries", () => {
     const above = chart.find((point) => point.strike === 360);
     expect(below?.profile).toBeLessThan(0);
     expect(above?.profile).toBeGreaterThan(0);
+    const anchor = chart.find((point) => Math.abs(point.strike - 345) < 1e-6);
+    expect(anchor?.profile).toBe(0);
   });
 
   it("rebases profile inside the ATM window for chart display", () => {

@@ -342,7 +342,7 @@ export function buildFlipAnchoredProfile(
   if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
 
   const sorted = [...window].sort((a, b) => a.strike - b.strike);
-  return sorted.map((point) => {
+  const profiled = sorted.map((point) => {
     let profile = 0;
     if (point.strike >= gammaFlip) {
       for (const row of sorted) {
@@ -355,6 +355,18 @@ export function buildFlipAnchoredProfile(
     }
     return { ...point, profile };
   });
+
+  const hasFlipStrike = profiled.some((point) => Math.abs(point.strike - gammaFlip) < 1e-6);
+  if (hasFlipStrike) return profiled;
+
+  const anchor: GexStrikePoint = {
+    strike: gammaFlip,
+    callGex: 0,
+    putGex: 0,
+    netGex: 0,
+    profile: 0,
+  };
+  return [...profiled, anchor].sort((a, b) => a.strike - b.strike);
 }
 
 export function prepareChartStrikeSeries(
