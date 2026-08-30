@@ -136,4 +136,20 @@ export function maxZoomScale(bounds: StrikeViewport): number {
   return Math.max(1, fullSpan / minSpan);
 }
 
+export const DEFAULT_Y_SCALE = 1;
+export const MIN_Y_SCALE = 0.25;
+export const MAX_Y_SCALE = 4;
+
+export function clampYScale(scale: number): number {
+  return Math.max(MIN_Y_SCALE, Math.min(MAX_Y_SCALE, scale));
+}
+
+export function zoomYScale(current: number, scale: number): number {
+  return clampYScale(current * scale);
+}
+
+export function isYScaleZoomed(scale: number): boolean {
+  return Math.abs(scale - DEFAULT_Y_SCALE) > 0.05;
+}
+
 export { MAX_ZOOM_STEPS };
