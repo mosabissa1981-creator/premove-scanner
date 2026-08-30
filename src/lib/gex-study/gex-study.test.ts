@@ -3,6 +3,7 @@ import {
   buildCumulativeProfileAtFlip,
   buildFlipAnchoredProfile,
   buildFlipSeries,
+  buildProfileSourceSeries,
   buildStrikeSeries,
   computeGammaFlip,
   computeGammaFlipDeep,
@@ -330,6 +331,27 @@ describe("prepareChartStrikeSeries", () => {
     expect(chart[0]?.strike).toBeGreaterThanOrEqual(150);
     expect(chart[0]?.profile).toBe(0);
   });
+
+  it("shows positive profile above an OI flip when rebased cumulative rises above flip", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "5", call_gamma_oi: "0", put_gamma_oi: "-500000" },
+      { strike: "50", call_gamma_oi: "0", put_gamma_oi: "-300000" },
+      { strike: "100", call_gamma_oi: "0", put_gamma_oi: "-200000" },
+      { strike: "150", call_gamma_oi: "0", put_gamma_oi: "-150000" },
+      { strike: "200", call_gamma_oi: "0", put_gamma_oi: "-100000" },
+      { strike: "240", call_gamma_oi: "0", put_gamma_oi: "-20000" },
+      { strike: "242.5", call_gamma_oi: "120000", put_gamma_oi: "0" },
+      { strike: "245", call_gamma_oi: "0", put_gamma_oi: "-5000" },
+      { strike: "260", call_gamma_oi: "100000", put_gamma_oi: "0" },
+      { strike: "275", call_gamma_oi: "150000", put_gamma_oi: "0" },
+    ];
+    const series = buildStrikeSeries(rows, 266);
+    const profileSource = buildProfileSourceSeries(rows);
+    const gammaFlip = 238.2;
+    const chart = prepareChartStrikeSeries(series, 266, gammaFlip, profileSource);
+    expect(interpolateProfileAtStrike(chart, gammaFlip)!).toBeCloseTo(0, 0);
+    expect(interpolateProfileAtStrike(chart, 245)!).toBeGreaterThan(0);
+  });
 });
 
 describe("pickAllExpiryGammaFlip", () => {
@@ -362,6 +384,26 @@ describe("pickAllExpiryGammaFlip", () => {
       nearby_flips: ["238.20", "256.86"],
     });
     expect(flip).toBeCloseTo(238.2, 1);
+  });
+
+  it("selects OI flip 238 for AMZN when profile zero crossing is near 263", () => {
+    const profileFlip = 263.54;
+    const spot = 266.43;
+    const flip = pickAllExpiryGammaFlip(
+      profileFlip,
+      256.86,
+      null,
+      spot,
+      {
+        call_wall: "275",
+        put_wall: "265",
+        gamma_flip: "256.86",
+        gamma_magnet: null,
+        nearby_flips: ["238.20", "256.86"],
+      },
+    );
+    expect(flip).toBeCloseTo(238.2, 1);
+    expect(flip!).toBeLessThan(profileFlip);
   });
 
   it("keeps the deeper NVDA flip when both profile and OI are valid", () => {
