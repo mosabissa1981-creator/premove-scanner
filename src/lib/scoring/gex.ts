@@ -12,34 +12,46 @@ export function isSaneGammaFlip(flip: number, stockPrice: number): boolean {
   return flip >= stockPrice * 0.25 && flip <= stockPrice * 1.5;
 }
 
-/** Prefer UW gex-levels (and nearby_flips) nearest to spot; fall back to profile. */
+function isUsableFlip(flip: number, stockPrice: number): boolean {
+  if (flip <= 0) return false;
+  if (stockPrice <= 0) return true;
+  return isSaneGammaFlip(flip, stockPrice);
+}
+
+/** Prefer UW nearby_flips in API order (first sane flip at/below spot), then profile. */
 export function resolveGammaFlip(
   levels: UwGexLevels | null | undefined,
   stockPrice: number,
   profileFlip: number | null,
 ): number | null {
-  const candidates: number[] = [];
-  const primary = parseLevel(levels?.gamma_flip);
-  if (primary != null) candidates.push(primary);
-  for (const flip of levels?.nearby_flips ?? []) {
-    const parsed = parseLevel(flip);
-    if (parsed != null) candidates.push(parsed);
+  const ordered: number[] = [];
+  const seen = new Set<number>();
+  const add = (value: string | null | undefined) => {
+    const parsed = parseLevel(value);
+    if (parsed == null || seen.has(parsed)) return;
+    seen.add(parsed);
+    ordered.push(parsed);
+  };
+
+  for (const flip of levels?.nearby_flips ?? []) add(flip);
+  add(levels?.gamma_flip);
+
+  for (const flip of ordered) {
+    if (!isUsableFlip(flip, stockPrice)) continue;
+    if (stockPrice > 0 && flip > stockPrice + 1e-6) continue;
+    return flip;
   }
 
-  const sane =
-    stockPrice > 0
-      ? candidates.filter((flip) => isSaneGammaFlip(flip, stockPrice))
-      : candidates.filter((flip) => flip > 0);
-
-  if (sane.length) {
-    const belowSpot = sane.filter((flip) => flip <= stockPrice + 1e-6);
-    if (belowSpot.length) return Math.max(...belowSpot);
-    return sane.reduce((best, flip) =>
+  const aboveSpot = ordered.filter(
+    (flip) => isUsableFlip(flip, stockPrice) && flip > stockPrice + 1e-6,
+  );
+  if (aboveSpot.length && stockPrice > 0) {
+    return aboveSpot.reduce((best, flip) =>
       Math.abs(flip - stockPrice) < Math.abs(best - stockPrice) ? flip : best,
     );
   }
 
-  if (profileFlip != null && stockPrice > 0 && isSaneGammaFlip(profileFlip, stockPrice)) {
+  if (profileFlip != null && isUsableFlip(profileFlip, stockPrice)) {
     return profileFlip;
   }
 

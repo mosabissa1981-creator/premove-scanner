@@ -30,6 +30,18 @@ describe("buildStrikeSeries", () => {
       series.reduce((sum, point) => sum + point.netGex, 0),
     );
   });
+
+  it("drops deep OTM strikes far below spot", () => {
+    const wideRows: UwSpotExposureStrikeRow[] = [
+      { strike: "0.5", call_gamma_oi: "0", put_gamma_oi: "-100" },
+      { strike: "4.5", call_gamma_oi: "200", put_gamma_oi: "0" },
+      { strike: "200", call_gamma_oi: "500", put_gamma_oi: "-100" },
+      { strike: "220", call_gamma_oi: "100", put_gamma_oi: "-50" },
+    ];
+    const series = buildStrikeSeries(wideRows, 217.55);
+    expect(series.every((point) => point.strike >= 217.55 * 0.15)).toBe(true);
+    expect(series[0].strike).toBe(200);
+  });
 });
 
 describe("computeGammaFlip", () => {
