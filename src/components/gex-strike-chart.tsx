@@ -15,8 +15,11 @@ import {
 } from "@/lib/gex-study/gex-chart-viewport";
 
 const CHART_WIDTH = 720;
-const CHART_HEIGHT = 340;
-const PAD = { top: 34, right: 54, bottom: 42, left: 54 };
+const CHART_HEIGHT = 380;
+const PAD = { top: 44, right: 82, bottom: 54, left: 82 };
+const AXIS_FONT = 22;
+const LABEL_FONT = 20;
+const VALUE_FONT = 22;
 const TAP_THRESHOLD_PX = 10;
 
 function formatAxisMoney(value: number, signed = false): string {
@@ -344,13 +347,13 @@ export function GexStrikeChart({
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-950/60">
-      <div className="flex items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2.5 text-xs text-zinc-500 sm:text-sm">
+      <div className="flex flex-col gap-2 border-b border-zinc-800 px-3 py-3 text-sm text-zinc-400 sm:flex-row sm:items-center sm:justify-between sm:text-xs">
         <span>Pinch to zoom · Drag to pan · Tap a bar for details</span>
         {zoomed && (
           <button
             type="button"
             onClick={resetView}
-            className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-300 hover:bg-zinc-800"
+            className="shrink-0 rounded-md border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 hover:bg-zinc-800 sm:text-xs"
           >
             Reset zoom
           </button>
@@ -359,7 +362,7 @@ export function GexStrikeChart({
 
       <div
         ref={containerRef}
-        className="relative h-[360px] w-full cursor-grab select-none active:cursor-grabbing sm:h-[320px]"
+        className="relative h-[440px] w-full cursor-grab select-none active:cursor-grabbing sm:h-[340px]"
         style={{ touchAction: "none" }}
         onWheel={onWheel}
         onDoubleClick={resetView}
@@ -387,7 +390,7 @@ export function GexStrikeChart({
             return (
               <g key={`yt-${tick}`}>
                 <line x1={PAD.left} y1={y} x2={PAD.left + plotW} y2={y} stroke="#27272a" />
-                <text x={PAD.left - 8} y={y + 4} textAnchor="end" fill="#a1a1aa" fontSize="12" fontWeight="500">
+                <text x={PAD.left - 10} y={y + 5} textAnchor="end" fill="#d4d4d8" fontSize={AXIS_FONT} fontWeight="600">
                   {formatAxisMoney(tick)}
                 </text>
               </g>
@@ -397,12 +400,12 @@ export function GexStrikeChart({
           {profileTicks.map((tick, i) => (
             <text
               key={`pr-${i}`}
-              x={CHART_WIDTH - PAD.right + 6}
-              y={yForProfile(tick) + 4}
+              x={CHART_WIDTH - PAD.right + 8}
+              y={yForProfile(tick) + 5}
               textAnchor="start"
               fill="#d4a853"
-              fontSize="12"
-              fontWeight="500"
+              fontSize={AXIS_FONT}
+              fontWeight="600"
             >
               {formatAxisMoney(tick)}
             </text>
@@ -474,10 +477,10 @@ export function GexStrikeChart({
                   strokeWidth={1.5}
                   strokeDasharray="5 4"
                 />
-                <text x={x} y={PAD.top - 10} textAnchor="middle" fill={level.color} fontSize="11" fontWeight="600">
+                <text x={x} y={PAD.top - 12} textAnchor="middle" fill={level.color} fontSize={LABEL_FONT} fontWeight="700">
                   {level.label}
                 </text>
-                <text x={x} y={CHART_HEIGHT - 10} textAnchor="middle" fill={level.color} fontSize="12" fontWeight="600">
+                <text x={x} y={CHART_HEIGHT - 12} textAnchor="middle" fill={level.color} fontSize={VALUE_FONT} fontWeight="700">
                   {formatStrike(level.value)}
                 </text>
               </g>
@@ -496,19 +499,19 @@ export function GexStrikeChart({
                 opacity={0.5}
               />
               <rect
-                x={xForStrike(stockPrice) - 28}
-                y={PAD.top + plotH + 6}
-                width={56}
-                height={20}
-                rx={10}
+                x={xForStrike(stockPrice) - 34}
+                y={PAD.top + plotH + 8}
+                width={68}
+                height={26}
+                rx={13}
                 fill="#1d4ed8"
               />
               <text
                 x={xForStrike(stockPrice)}
-                y={PAD.top + plotH + 20}
+                y={PAD.top + plotH + 26}
                 textAnchor="middle"
                 fill="#eff6ff"
-                fontSize="12"
+                fontSize={VALUE_FONT}
                 fontWeight="700"
               >
                 {formatStrike(stockPrice)}
@@ -520,11 +523,11 @@ export function GexStrikeChart({
             <text
               key={`xs-${tick}`}
               x={xForStrike(tick)}
-              y={CHART_HEIGHT - 24}
+              y={CHART_HEIGHT - 30}
               textAnchor="middle"
-              fill="#a1a1aa"
-              fontSize="12"
-              fontWeight="500"
+              fill="#d4d4d8"
+              fontSize={AXIS_FONT}
+              fontWeight="600"
             >
               {formatStrike(tick)}
             </text>
@@ -533,24 +536,24 @@ export function GexStrikeChart({
 
         {tooltip && (
           <div
-            className="pointer-events-none absolute z-10 min-w-[180px] rounded-lg border border-zinc-700 bg-zinc-900/95 px-3.5 py-3 text-sm shadow-xl"
+            className="pointer-events-none absolute z-10 min-w-[200px] rounded-xl border border-zinc-600 bg-zinc-900/95 px-4 py-3.5 text-base shadow-xl"
             style={{
               left: Math.min(Math.max(tooltip.x + 12, 8), (containerRef.current?.clientWidth ?? 300) - 160),
               top: Math.max(tooltip.y - 72, 8),
             }}
           >
-            <div className="text-base font-bold text-zinc-100">Strike: {formatStrike(tooltip.point.strike)}</div>
-            <div className={`mt-1 text-sm font-semibold ${tooltip.point.netGex >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+            <div className="text-lg font-bold text-zinc-100">Strike: {formatStrike(tooltip.point.strike)}</div>
+            <div className={`mt-1.5 text-base font-semibold ${tooltip.point.netGex >= 0 ? "text-emerald-400" : "text-red-400"}`}>
               Net GEX: {formatAxisMoney(tooltip.point.netGex, true)}
             </div>
-            <div className="mt-0.5 text-sm font-semibold text-amber-300">
+            <div className="mt-1 text-base font-semibold text-amber-300">
               Gamma Profile: {formatAxisMoney(tooltip.point.profile, true)}
             </div>
           </div>
         )}
       </div>
 
-      <div className="flex flex-wrap gap-3 border-t border-zinc-800 px-3 py-2.5 text-xs text-zinc-400 sm:text-sm">
+      <div className="flex flex-wrap gap-3 border-t border-zinc-800 px-3 py-3 text-sm text-zinc-300 sm:text-xs sm:text-zinc-400">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-sm bg-emerald-400" />
           Net GEX (+)
