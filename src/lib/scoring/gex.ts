@@ -18,31 +18,32 @@ function isUsableFlip(flip: number, stockPrice: number): boolean {
   return isSaneGammaFlip(flip, stockPrice);
 }
 
-/** Prefer UW nearby_flips in API order (first sane flip at/below spot), then profile. */
+/** Prefer the deepest sane UW flip at/below spot (OptionCharts-style), then profile. */
 export function resolveGammaFlip(
   levels: UwGexLevels | null | undefined,
   stockPrice: number,
   profileFlip: number | null,
 ): number | null {
-  const ordered: number[] = [];
+  const candidates: number[] = [];
   const seen = new Set<number>();
   const add = (value: string | null | undefined) => {
     const parsed = parseLevel(value);
     if (parsed == null || seen.has(parsed)) return;
     seen.add(parsed);
-    ordered.push(parsed);
+    candidates.push(parsed);
   };
 
-  for (const flip of levels?.nearby_flips ?? []) add(flip);
   add(levels?.gamma_flip);
+  for (const flip of levels?.nearby_flips ?? []) add(flip);
 
-  for (const flip of ordered) {
-    if (!isUsableFlip(flip, stockPrice)) continue;
-    if (stockPrice > 0 && flip > stockPrice + 1e-6) continue;
-    return flip;
-  }
+  const belowSpot = candidates.filter(
+    (flip) =>
+      isUsableFlip(flip, stockPrice) &&
+      (stockPrice <= 0 || flip <= stockPrice + 1e-6),
+  );
+  if (belowSpot.length) return Math.min(...belowSpot);
 
-  const aboveSpot = ordered.filter(
+  const aboveSpot = candidates.filter(
     (flip) => isUsableFlip(flip, stockPrice) && flip > stockPrice + 1e-6,
   );
   if (aboveSpot.length && stockPrice > 0) {

@@ -424,7 +424,7 @@ export async function fetchGexStudy(
   }
 
   const profileFlip = computeGammaFlipFromWindow(fullSeries, stockPrice);
-  const levelsFlip = resolveGammaFlip(levelsRes?.data, stockPrice ?? 0, profileFlip);
+  const levelsFlip = resolveGammaFlip(levelsRes?.data, stockPrice ?? 0, null);
   const levels = levelsRes?.data
     ? computeGexLevelsFromUw(levelsRes.data, stockPrice ?? 0)
     : null;
