@@ -37,12 +37,16 @@ export async function GET(request: Request) {
 
     if (expiryParam === "all") {
       const result = await fetchGexStudy(client, ticker, "all");
-      return NextResponse.json(result);
+      return NextResponse.json(result, {
+        headers: { "Cache-Control": "no-store, max-age=0" },
+      });
     }
 
     if (expiryParam) {
       const result = await fetchGexStudy(client, ticker, expiryParam.slice(0, 10));
-      return NextResponse.json(result);
+      return NextResponse.json(result, {
+        headers: { "Cache-Control": "no-store, max-age=0" },
+      });
     }
 
     const exposureRes = (await client.greekExposureByExpiry(
@@ -53,7 +57,9 @@ export async function GET(request: Request) {
         ? "all"
         : resolveStudyExpiry(exposureRes.data ?? [], null, mode);
     const result = await fetchGexStudy(client, ticker, expiry);
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: { "Cache-Control": "no-store, max-age=0" },
+    });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "GEX study failed" },

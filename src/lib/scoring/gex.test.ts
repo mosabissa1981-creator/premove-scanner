@@ -1,5 +1,37 @@
 import { describe, it, expect } from "vitest";
-import { computeGexLevelsFromUw } from "@/lib/scoring/gex";
+import { computeGexLevelsFromUw, resolveGammaFlip } from "@/lib/scoring/gex";
+
+describe("resolveGammaFlip", () => {
+  it("rejects deep OTM flips and uses the highest sane flip at or below spot", () => {
+    const flip = resolveGammaFlip(
+      {
+        gamma_flip: "4.5",
+        nearby_flips: ["4.5", "199.77", "210"],
+        call_wall: null,
+        put_wall: null,
+        gamma_magnet: null,
+      },
+      217.55,
+      null,
+    );
+    expect(flip).toBe(210);
+  });
+
+  it("uses nearby_flips when primary flip is deep OTM", () => {
+    const flip = resolveGammaFlip(
+      {
+        gamma_flip: "4.5",
+        nearby_flips: ["4.5", "199.77"],
+        call_wall: null,
+        put_wall: null,
+        gamma_magnet: null,
+      },
+      217.55,
+      null,
+    );
+    expect(flip).toBeCloseTo(199.77, 1);
+  });
+});
 
 describe("computeGexLevelsFromUw", () => {
   it("reads a positive regime when price is above the gamma flip", () => {
