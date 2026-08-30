@@ -79,8 +79,8 @@ describe("resolveGammaFlip", () => {
   it("rejects junk nearby flips far below spot (TSLA-style)", () => {
     const flip = resolveGammaFlip(
       {
-        gamma_flip: "103.85",
-        nearby_flips: ["103.85", "344.28"],
+        gamma_flip: "344.28",
+        nearby_flips: ["344.28", "336.4"],
         call_wall: "400",
         put_wall: "347.5",
         gamma_magnet: "340",

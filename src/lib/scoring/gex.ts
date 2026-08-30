@@ -24,34 +24,34 @@ function isUsableFlip(flip: number, stockPrice: number): boolean {
   return isRelevantGammaFlip(flip, stockPrice);
 }
 
-/** Prefer the deepest sane UW flip at/below spot (OptionCharts-style), then profile. */
+/** Prefer UW primary gamma_flip (nearest to spot per API), then nearest nearby fallback. */
 export function resolveGammaFlip(
   levels: UwGexLevels | null | undefined,
   stockPrice: number,
   profileFlip: number | null,
 ): number | null {
-  const candidates: number[] = [];
-  const seen = new Set<number>();
-  const add = (value: string | null | undefined) => {
-    const parsed = parseLevel(value);
-    if (parsed == null || seen.has(parsed)) return;
-    seen.add(parsed);
-    candidates.push(parsed);
-  };
+  const primary = parseLevel(levels?.gamma_flip);
+  if (primary != null && isUsableFlip(primary, stockPrice)) {
+    return primary;
+  }
 
-  add(levels?.gamma_flip);
-  for (const flip of levels?.nearby_flips ?? []) add(flip);
+  for (const flip of levels?.nearby_flips ?? []) {
+    const parsed = parseLevel(flip);
+    if (
+      parsed != null &&
+      isUsableFlip(parsed, stockPrice) &&
+      (stockPrice <= 0 || parsed <= stockPrice + 1e-6)
+    ) {
+      return parsed;
+    }
+  }
 
-  const belowSpot = candidates.filter(
-    (flip) =>
-      isUsableFlip(flip, stockPrice) &&
-      (stockPrice <= 0 || flip <= stockPrice + 1e-6),
-  );
-  if (belowSpot.length) return Math.min(...belowSpot);
-
-  const aboveSpot = candidates.filter(
-    (flip) => isUsableFlip(flip, stockPrice) && flip > stockPrice + 1e-6,
-  );
+  const aboveSpot = (levels?.nearby_flips ?? [])
+    .map(parseLevel)
+    .filter(
+      (flip): flip is number =>
+        flip != null && isUsableFlip(flip, stockPrice) && flip > stockPrice + 1e-6,
+    );
   if (aboveSpot.length && stockPrice > 0) {
     return aboveSpot.reduce((best, flip) =>
       Math.abs(flip - stockPrice) < Math.abs(best - stockPrice) ? flip : best,

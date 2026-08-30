@@ -296,6 +296,30 @@ export function pickDeepestSaneFlipBelowSpot(
   return Math.min(...sane);
 }
 
+/** Interpolate cumulative gamma profile at an arbitrary strike. */
+export function interpolateProfileAtStrike(
+  points: GexStrikePoint[],
+  strike: number,
+): number | null {
+  if (!points.length || !Number.isFinite(strike)) return null;
+  const sorted = [...points].sort((a, b) => a.strike - b.strike);
+  if (strike <= sorted[0].strike) return sorted[0].profile;
+  const last = sorted[sorted.length - 1];
+  if (strike >= last.strike) return last.profile;
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const curr = sorted[i];
+    if (strike < prev.strike || strike > curr.strike) continue;
+    const span = curr.strike - prev.strike;
+    if (span === 0) return curr.profile;
+    const ratio = (strike - prev.strike) / span;
+    return prev.profile + ratio * (curr.profile - prev.profile);
+  }
+
+  return null;
+}
+
 export { isRelevantGammaFlip } from "@/lib/scoring/gex";
 
 /** Chart series: ATM window with profile rebased to zero at the left edge. */
@@ -306,11 +330,11 @@ export function prepareChartStrikeSeries(
   return rebaseProfileWindow(points, stockPrice);
 }
 
-/** All-expiry flip: ATM profile first, deeper UW level when valid, ignore junk crossings. */
+/** All-expiry flip: profile when reliable, OI gamma_flip, deeper vol flip for MSFT-style. */
 export function pickAllExpiryGammaFlip(
   profileFlip: number | null,
-  levelsFlip: number | null,
-  deepProfileFlip: number | null,
+  oiFlip: number | null,
+  volFlip: number | null,
   stockPrice: number,
 ): number | null {
   const relevant = (flip: number | null | undefined): number | null =>
@@ -319,16 +343,19 @@ export function pickAllExpiryGammaFlip(
       : null;
 
   const profile = relevant(profileFlip);
-  const levels = relevant(levelsFlip);
-  const deep = relevant(deepProfileFlip);
+  const oi = relevant(oiFlip);
+  const vol = relevant(volFlip);
 
-  if (profile && levels) {
-    if (profile < stockPrice * 0.75 && levels > profile) return levels;
-    return Math.min(profile, levels);
+  if (profile && oi) {
+    if (profile < stockPrice * 0.75 && oi > profile) return oi;
+    const nearest = Math.min(profile, oi);
+    if (vol && vol < nearest && (nearest - vol) / stockPrice > 0.05) return vol;
+    return nearest;
   }
+  if (profile && vol && vol < profile) return vol;
   if (profile) return profile;
-  if (levels) return levels;
-  if (deep) return deep;
+  if (oi) return oi;
+  if (vol) return vol;
   return null;
 }
 
@@ -611,36 +638,6 @@ function latestSpotNetGex(
   return Number.isNaN(net) ? null : net;
 }
 
-function mergeGexLevelsForFlip(
-  ...sources: (UwGexLevels | null | undefined)[]
-): UwGexLevels | null {
-  const nearby_flips: string[] = [];
-  const seen = new Set<string>();
-  let gamma_flip: string | null = null;
-
-  const add = (value: string | null | undefined) => {
-    if (value == null || value === "" || seen.has(value)) return;
-    seen.add(value);
-    nearby_flips.push(value);
-    if (gamma_flip == null) gamma_flip = value;
-  };
-
-  for (const source of sources) {
-    if (!source) continue;
-    add(source.gamma_flip);
-    for (const flip of source.nearby_flips ?? []) add(flip);
-  }
-
-  if (!nearby_flips.length && gamma_flip == null) return null;
-  return {
-    gamma_flip,
-    nearby_flips,
-    call_wall: null,
-    put_wall: null,
-    gamma_magnet: null,
-  };
-}
-
 export async function fetchGexStudy(
   client: UnusualWhalesClient,
   ticker: string,
@@ -648,21 +645,20 @@ export async function fetchGexStudy(
 ): Promise<GexStudyResult> {
   const useAll = expiry === "all";
 
-  const [exposureRes, ohlcRes, levelsOiRes, levelsVolRes, spotTotalsRes] =
-    await Promise.all([
+  const ohlcRes = (await client.ohlc(ticker, "1d", 1)) as UwDataResponse<UwCandle[]>;
+  const stockPrice = latestClose(ohlcRes.data ?? []);
+  const tradingDate = resolveTradingDate(ohlcRes.data ?? []);
+
+  const [exposureRes, levelsOiRes, levelsVolRes, spotTotalsRes] = await Promise.all([
     client.greekExposureByExpiry(ticker) as Promise<UwDataResponse<UwGreekExposureExpiryRow[]>>,
-    client.ohlc(ticker, "1d", 1) as Promise<UwDataResponse<UwCandle[]>>,
-    client.gexLevels(ticker, "oi") as Promise<UwDataResponse<UwGexLevels>>,
+    client.gexLevels(ticker, "oi", tradingDate) as Promise<UwDataResponse<UwGexLevels>>,
     useAll
-      ? (client.gexLevels(ticker, "vol") as Promise<UwDataResponse<UwGexLevels>>)
+      ? (client.gexLevels(ticker, "vol", tradingDate) as Promise<UwDataResponse<UwGexLevels>>)
       : Promise.resolve(null),
     useAll
       ? (client.spotExposures(ticker) as Promise<UwDataResponse<UwSpotExposureSnapshot[]>>)
       : Promise.resolve(null),
   ]);
-
-  const stockPrice = latestClose(ohlcRes.data ?? []);
-  const tradingDate = resolveTradingDate(ohlcRes.data ?? []);
   const expiries = (exposureRes.data ?? [])
     .map((row) => expiryKey(row))
     .filter(Boolean);
@@ -713,12 +709,8 @@ export async function fetchGexStudy(
   }
 
   const profileFlip = computeGammaFlipFromWindow(fullSeries, stockPrice);
-  const flipSeries = buildFlipSeries(strikeRows, stockPrice);
-  const deepProfileFlip = computeGammaFlipDeep(flipSeries, stockPrice);
-  const mergedFlipLevels = useAll
-    ? mergeGexLevelsForFlip(levelsOiRes?.data, levelsVolRes?.data)
-    : levelsOiRes?.data;
-  const levelsFlip = resolveGammaFlip(mergedFlipLevels, stockPrice ?? 0, null);
+  const oiFlip = resolveGammaFlip(levelsOiRes?.data, stockPrice ?? 0, null);
+  const volFlip = useAll ? resolveGammaFlip(levelsVolRes?.data, stockPrice ?? 0, null) : null;
   const levels = levelsOiRes?.data
     ? computeGexLevelsFromUw(levelsOiRes.data, stockPrice ?? 0)
     : null;
@@ -729,15 +721,13 @@ export async function fetchGexStudy(
   const spot = stockPrice ?? 0;
   const saneProfileFlip =
     profileFlip != null && spot > 0 && isSaneGammaFlip(profileFlip, spot) ? profileFlip : null;
-  const saneLevelsFlip =
-    levelsFlip != null && spot > 0 && isRelevantGammaFlip(levelsFlip, spot) ? levelsFlip : null;
-  const saneDeepProfileFlip =
-    deepProfileFlip != null && spot > 0 && isSaneGammaFlip(deepProfileFlip, spot)
-      ? deepProfileFlip
-      : null;
+  const saneOiFlip =
+    oiFlip != null && spot > 0 && isRelevantGammaFlip(oiFlip, spot) ? oiFlip : null;
+  const saneVolFlip =
+    volFlip != null && spot > 0 && isRelevantGammaFlip(volFlip, spot) ? volFlip : null;
 
   let gammaFlip = useAll
-    ? pickAllExpiryGammaFlip(saneProfileFlip, saneLevelsFlip, saneDeepProfileFlip, spot)
+    ? pickAllExpiryGammaFlip(saneProfileFlip, saneOiFlip, saneVolFlip, spot)
     : (saneProfileFlip ?? computeGammaFlip(fullSeries, stockPrice));
 
   if (gammaFlip != null && spot > 0 && !isSaneGammaFlip(gammaFlip, spot)) {
