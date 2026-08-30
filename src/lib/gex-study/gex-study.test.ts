@@ -3,6 +3,7 @@ import {
   buildCumulativeProfileAtFlip,
   buildFlipAnchoredProfile,
   buildFlipSeries,
+  buildProfileSourceSeries,
   buildStrikeSeries,
   computeGammaFlip,
   computeGammaFlipDeep,
@@ -329,6 +330,27 @@ describe("prepareChartStrikeSeries", () => {
     const chart = prepareChartStrikeSeries(series, 217.55);
     expect(chart[0]?.strike).toBeGreaterThanOrEqual(150);
     expect(chart[0]?.profile).toBe(0);
+  });
+
+  it("shows positive profile above an OI flip when rebased cumulative rises above flip", () => {
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "5", call_gamma_oi: "0", put_gamma_oi: "-500000" },
+      { strike: "50", call_gamma_oi: "0", put_gamma_oi: "-300000" },
+      { strike: "100", call_gamma_oi: "0", put_gamma_oi: "-200000" },
+      { strike: "150", call_gamma_oi: "0", put_gamma_oi: "-150000" },
+      { strike: "200", call_gamma_oi: "0", put_gamma_oi: "-100000" },
+      { strike: "240", call_gamma_oi: "0", put_gamma_oi: "-20000" },
+      { strike: "242.5", call_gamma_oi: "120000", put_gamma_oi: "0" },
+      { strike: "245", call_gamma_oi: "0", put_gamma_oi: "-5000" },
+      { strike: "260", call_gamma_oi: "100000", put_gamma_oi: "0" },
+      { strike: "275", call_gamma_oi: "150000", put_gamma_oi: "0" },
+    ];
+    const series = buildStrikeSeries(rows, 266);
+    const profileSource = buildProfileSourceSeries(rows);
+    const gammaFlip = 238.2;
+    const chart = prepareChartStrikeSeries(series, 266, gammaFlip, profileSource);
+    expect(interpolateProfileAtStrike(chart, gammaFlip)!).toBeCloseTo(0, 0);
+    expect(interpolateProfileAtStrike(chart, 245)!).toBeGreaterThan(0);
   });
 });
 
