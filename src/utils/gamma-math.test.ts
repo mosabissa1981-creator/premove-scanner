@@ -178,21 +178,23 @@ describe("rebaseProfileAtFlip", () => {
 });
 
 describe("computeGexWallsFromSeries", () => {
-  it("picks put wall by peak negative dollar GEX below spot (MSTR-like)", () => {
+  it("picks put wall by peak |negative| put dollar GEX (MSTR-like OI trap)", () => {
     const spot = 128.5;
+    // Strike 90: huge OI-style put mass but modest dollar GEX after gamma weight.
+    // Strike 125: smaller OI but peak |putGex| near spot — OptionCharts put wall.
     const series = [
-      { strike: 95, netGex: -500_000 },
-      { strike: 110, netGex: -1_000_000 },
-      { strike: 125, netGex: -8_000_000 },
-      { strike: 130, netGex: 12_000_000 },
-      { strike: 140, netGex: 4_000_000 },
+      { strike: 90, netGex: -6_000_000, callGex: 0, putGex: -6_000_000 },
+      { strike: 95, netGex: -500_000, callGex: 0, putGex: -500_000 },
+      { strike: 125, netGex: -5_000_000, callGex: 7_000_000, putGex: -12_000_000 },
+      { strike: 130, netGex: 12_000_000, callGex: 14_000_000, putGex: -2_000_000 },
+      { strike: 140, netGex: 4_000_000, callGex: 4_500_000, putGex: -500_000 },
     ];
     const walls = computeGexWallsFromSeries(series, spot);
     expect(walls.putWall).toBe(125);
     expect(walls.callWall).toBe(130);
   });
 
-  it("ignores shallow positive net GEX below spot when finding put wall", () => {
+  it("falls back to net GEX peaks when putGex/callGex are absent", () => {
     const series = [
       { strike: 50, netGex: 80_000 },
       { strike: 55, netGex: 50_000 },
@@ -203,6 +205,21 @@ describe("computeGexWallsFromSeries", () => {
     const walls = computeGexWallsFromSeries(series, 64);
     expect(walls.putWall).toBe(60);
     expect(walls.callWall).toBe(75);
+  });
+
+  it("does not prefer a less-negative net bar over peak |putGex|", () => {
+    // Net at 90 is more negative than net at 125 (call GEX offsets puts at 125),
+    // but put-side dollar GEX peaks at 125 — that is the structural put wall.
+    const walls = computeGexWallsFromSeries(
+      [
+        { strike: 90, netGex: -8_000_000, callGex: 0, putGex: -8_000_000 },
+        { strike: 125, netGex: -3_000_000, callGex: 9_000_000, putGex: -12_000_000 },
+        { strike: 130, netGex: 15_000_000, callGex: 15_000_000, putGex: 0 },
+      ],
+      129,
+    );
+    expect(walls.putWall).toBe(125);
+    expect(walls.callWall).toBe(130);
   });
 });
 
