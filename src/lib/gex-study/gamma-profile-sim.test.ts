@@ -5,7 +5,6 @@ import {
   buildRebaseAtFlipProfile,
   dedupeChainLegs,
   dollarGammaExposure,
-  flipIndexForPrice,
   gammaFlipFromRawProfile,
   gammaFlipFromSimulatedProfile,
   interpolateSimulatedProfile,

@@ -1,9 +1,8 @@
 /**
  * OptionCharts-style gamma profile math shared across API + chart layers.
  *
- * Bidirectional sweep: anchor profile at $0 on gamma flip, accumulate localized
- * net GEX left and right from the flip index. Isolated BS simulation totals
- * rebase via subtraction at the flip spot.
+ * - Bar/localized GEX: left-to-right cumsum rebased at gamma flip
+ * - BS simulation totals: isolated portfolio value at each spot, rebased at flip
  */
 
 export interface RebasedProfilePoint {
@@ -11,7 +10,7 @@ export interface RebasedProfilePoint {
   x: number;
   /** Profile ($ / 1% move), anchored at $0 on gamma flip. */
   profile: number;
-  /** Optional raw/localized value before sweep (for debugging/tooltips). */
+  /** Optional raw/localized value before integration (for debugging/tooltips). */
   rawValue?: number;
 }
 
@@ -44,76 +43,43 @@ export function findFlipIndexFromPrice(xs: number[], gammaFlip: number): number 
   return flipIndex;
 }
 
-/** Index where localized net GEX crosses from non-positive to positive. */
-export function findFlipIndexFromSignChange(values: number[]): number {
-  for (let i = 1; i < values.length; i++) {
-    if (values[i - 1] <= 0 && values[i] > 0) return i;
-  }
-  for (let i = values.length - 1; i >= 0; i--) {
-    if (values[i] <= 0) return i;
-  }
-  return 0;
-}
-
 /**
- * Bidirectional cumulative profile when flip lands exactly on a strike index.
- *
- * - finalProfile[flipIndex] = 0
- * - Right: finalProfile[i] = finalProfile[i - 1] + localized[i]
- * - Left:  finalProfile[i] = finalProfile[i + 1] + localized[i]
+ * Left-to-right cumulative sum rebased to $0 at gamma flip.
+ * Used for localized per-strike bar GEX (no bidirectional sweep).
  */
-export function buildBidirectionalProfileAtFlip(
-  localizedValues: number[],
-  flipIndex: number,
-): number[] {
-  const n = localizedValues.length;
-  const profile = new Array<number>(n).fill(0);
-  if (!n) return profile;
-
-  const anchor = Math.max(0, Math.min(flipIndex, n - 1));
-  profile[anchor] = 0;
-
-  for (let i = anchor + 1; i < n; i++) {
-    profile[i] = profile[i - 1] + (localizedValues[i] ?? 0);
-  }
-
-  for (let i = anchor - 1; i >= 0; i--) {
-    profile[i] = profile[i + 1] + (localizedValues[i] ?? 0);
-  }
-
-  return profile;
-}
-
-/**
- * Localized per-strike net GEX → bidirectional profile anchored at gamma flip.
- * Sweeps from the last strike at or below flip, then shifts so profile = 0 at flip price.
- */
-export function buildProfileAtFlip(
+export function buildCumsumProfileAtFlip(
   xs: number[],
-  localizedValues: number[],
+  values: number[],
   gammaFlip: number,
 ): RebasedProfilePoint[] {
   const n = xs.length;
   if (!n || !Number.isFinite(gammaFlip)) return [];
 
   const sorted = xs
-    .map((x, index) => ({ x, localized: localizedValues[index] ?? 0 }))
+    .map((x, index) => ({ x, value: values[index] ?? 0 }))
     .sort((a, b) => a.x - b.x);
   const sortedXs = sorted.map((point) => point.x);
-  const sortedLocalized = sorted.map((point) => point.localized);
-  const flipIndex = findFlipIndexFromPrice(sortedXs, gammaFlip);
-  const profiles = buildBidirectionalProfileAtFlip(sortedLocalized, flipIndex);
-  const atFlip = interpolateSeriesAtX(sortedXs, profiles, gammaFlip);
+  const sortedValues = sorted.map((point) => point.value);
+
+  let running = 0;
+  const cumsum = sortedValues.map((value) => {
+    running += value;
+    return running;
+  });
+  const atFlip = interpolateSeriesAtX(sortedXs, cumsum, gammaFlip);
 
   return sorted.map((point, index) => ({
     x: point.x,
-    profile: (profiles[index] ?? 0) - atFlip,
-    rawValue: point.localized,
+    profile: (cumsum[index] ?? 0) - atFlip,
+    rawValue: point.value,
   }));
 }
 
-/** Isolated BS totals at each simulated spot → profile = raw - rawAtFlip. */
-export function buildProfileAtFlipFromIsolated(
+/**
+ * Independent BS portfolio total at each simulated spot → profile = total - total@flip.
+ * Each spot is evaluated in isolation (no step-to-step accumulation).
+ */
+export function buildIsolatedRebaseAtFlip(
   xs: number[],
   isolatedTotals: number[],
   gammaFlip: number,
@@ -135,13 +101,31 @@ export function buildProfileAtFlipFromIsolated(
   }));
 }
 
-/** @deprecated Use `buildProfileAtFlip` for bars or `buildProfileAtFlipFromIsolated` for BS sim. */
+/** Localized per-strike net GEX → cumsum profile anchored at gamma flip. */
+export function buildProfileAtFlip(
+  xs: number[],
+  localizedValues: number[],
+  gammaFlip: number,
+): RebasedProfilePoint[] {
+  return buildCumsumProfileAtFlip(xs, localizedValues, gammaFlip);
+}
+
+/** Isolated BS portfolio totals per simulated spot → rebase at flip. */
+export function buildProfileAtFlipFromIsolated(
+  xs: number[],
+  isolatedTotals: number[],
+  gammaFlip: number,
+): RebasedProfilePoint[] {
+  return buildIsolatedRebaseAtFlip(xs, isolatedTotals, gammaFlip);
+}
+
+/** @deprecated Use `buildCumsumProfileAtFlip` or `buildIsolatedRebaseAtFlip`. */
 export function rebaseProfileAtFlip(
   xs: number[],
   rawValues: number[],
   gammaFlip: number,
 ): RebasedProfilePoint[] {
-  return buildProfileAtFlipFromIsolated(xs, rawValues, gammaFlip);
+  return buildIsolatedRebaseAtFlip(xs, rawValues, gammaFlip);
 }
 
 /** Map profile values back onto strike-keyed rows. */

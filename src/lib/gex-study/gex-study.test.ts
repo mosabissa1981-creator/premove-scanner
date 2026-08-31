@@ -619,7 +619,7 @@ const SPY_LIKE_CHAIN: OptionChainLeg[] = [
 ];
 
 describe("buildSimulatedChartStrikes", () => {
-  it("uses BS rebase so profile minimum sits at gamma flip, not put wall", () => {
+  it("uses isolated BS profile rebased at gamma flip without put-wall air pocket", () => {
     const stockPrice = 769;
     const gammaFlip = 772;
     const putWall = 756;
