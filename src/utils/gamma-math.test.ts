@@ -7,8 +7,11 @@ import {
   buildProfileAtFlip,
   buildProfileAtFlipFromIsolated,
   computeGexWallsFromSeries,
+  defaultRiskFreeRate,
+  filterLegsByMaxDte,
   gammaFlipFromRawProfile,
   interpolateSeriesAtX,
+  MAX_GEX_PROFILE_DTE,
   rebaseProfileAtFlip,
   simulateRawNetGexProfile,
   type OptionChainLeg,
@@ -173,6 +176,57 @@ describe("rebaseProfileAtFlip", () => {
     for (const point of rebased) {
       const match = isolated.find((row) => row.x === point.x);
       expect(point.profile).toBeCloseTo(match?.profile ?? 0, 6);
+    }
+  });
+});
+
+describe("filterLegsByMaxDte", () => {
+  it("drops LEAP legs beyond 120 DTE", () => {
+    const legs: OptionChainLeg[] = [
+      { strike: 125, type: "P", oi: 10_000, iv: 0.4, expiry: "2026-09-19", dte: 20 },
+      { strike: 130, type: "C", oi: 12_000, iv: 0.4, expiry: "2026-09-19", dte: 20 },
+      { strike: 140, type: "C", oi: 8_000, iv: 0.35, expiry: "2027-01-15", dte: 140 },
+    ];
+    const filtered = filterLegsByMaxDte(legs, MAX_GEX_PROFILE_DTE);
+    expect(filtered).toHaveLength(2);
+    expect(filtered.every((leg) => leg.dte <= 120)).toBe(true);
+  });
+
+  it("keeps original legs when every expiry is beyond the max DTE", () => {
+    const leaps: OptionChainLeg[] = [
+      { strike: 130, type: "C", oi: 5_000, iv: 0.3, expiry: "2027-06-18", dte: 290 },
+    ];
+    expect(filterLegsByMaxDte(leaps)).toEqual(leaps);
+  });
+});
+
+describe("defaultRiskFreeRate", () => {
+  it("uses 5% to align with current Treasury-style platform defaults", () => {
+    expect(defaultRiskFreeRate()).toBe(0.05);
+  });
+});
+
+describe("simulateRawNetGexProfile DTE filter", () => {
+  it("excludes LEAP legs from the simulated profile by default", () => {
+    const near: OptionChainLeg[] = [
+      { strike: 120, type: "P", oi: 50_000, iv: 0.4, expiry: "2026-09-19", dte: 20 },
+      { strike: 130, type: "C", oi: 50_000, iv: 0.4, expiry: "2026-09-19", dte: 20 },
+    ];
+    const withLeap: OptionChainLeg[] = [
+      ...near,
+      { strike: 200, type: "C", oi: 200_000, iv: 0.35, expiry: "2027-01-15", dte: 150 },
+    ];
+    const base = simulateRawNetGexProfile(near, 128, {
+      steps: 40,
+      asOfDate: "2026-08-30",
+    });
+    const filtered = simulateRawNetGexProfile(withLeap, 128, {
+      steps: 40,
+      asOfDate: "2026-08-30",
+    });
+    expect(filtered).toHaveLength(base.length);
+    for (let i = 0; i < base.length; i++) {
+      expect(filtered[i]?.rawNetGex).toBeCloseTo(base[i]?.rawNetGex ?? 0, 4);
     }
   });
 });
