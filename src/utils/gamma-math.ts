@@ -261,18 +261,6 @@ export function filterLegsByMaxDte(
   return filtered.length ? filtered : legs;
 }
 
-/** Keep only contracts expiring on the current trading session (0DTE slice). */
-export function filterLegsForOdte(
-  legs: OptionChainLeg[],
-  tradingDate: string,
-): OptionChainLeg[] {
-  if (!legs.length) return legs;
-  const asOf = tradingDate.slice(0, 10);
-  return legs.filter(
-    (leg) => leg.expiry.slice(0, 10) === asOf || resolveLegDte(leg, asOf) === 0,
-  );
-}
-
 function yearsToExpiry(expiry: string, asOfDate: string): number {
   const end = Date.parse(expiry.slice(0, 10));
   const start = Date.parse(asOfDate.slice(0, 10));

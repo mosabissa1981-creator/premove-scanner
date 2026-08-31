@@ -151,12 +151,6 @@ export interface GexStrikePoint {
   profile: number;
 }
 
-export interface IvSmilePoint {
-  strike: number;
-  iv: number;
-  type: "call" | "put";
-}
-
 export interface GexStudyResult {
   ticker: string;
   expiry: string;
@@ -176,9 +170,6 @@ export interface GexStudyResult {
   /** Whether the orange profile line came from BS simulation or bar fallback. */
   profileSource: "simulated" | "bars";
   chainLegCount: number;
-  /** When true, profile/walls were computed from 0DTE contracts only. */
-  odteOnly?: boolean;
-  ivSmile?: IvSmilePoint[];
 }
 
 export type GexExpiryMode = "daily" | "weekly" | "monthly" | "all";
