@@ -7,6 +7,7 @@ import {
 import {
   buildChainSimulatedGammaProfile,
   buildLocalizedBarProfileAtFlip,
+  computeGexWallsFromSeries,
   gammaFlipFromRawProfile,
   simulateRawNetGexProfile,
 } from "@/utils/gamma-math";
@@ -611,43 +612,7 @@ export function computeWallsFromSeries(
   points: GexStrikePoint[],
   stockPrice: number | null,
 ): { callWall: number | null; putWall: number | null; gammaMagnet: number | null } {
-  if (!points.length) {
-    return { callWall: null, putWall: null, gammaMagnet: null };
-  }
-
-  let callWall: number | null = null;
-  let callMax = -Infinity;
-  let putWall: number | null = null;
-  let putMax = -Infinity;
-  let gammaMagnet: number | null = null;
-  let magnetAbs = -Infinity;
-
-  for (const point of points) {
-    const absNet = Math.abs(point.netGex);
-    if (absNet > magnetAbs) {
-      magnetAbs = absNet;
-      gammaMagnet = point.strike;
-    }
-
-    if (stockPrice != null && stockPrice > 0) {
-      if (point.strike > stockPrice && point.netGex > callMax) {
-        callMax = point.netGex;
-        callWall = point.strike;
-      }
-      if (point.strike < stockPrice && point.netGex > putMax) {
-        putMax = point.netGex;
-        putWall = point.strike;
-      }
-    }
-  }
-
-  if (stockPrice == null) {
-    const byNet = [...points].sort((a, b) => b.netGex - a.netGex);
-    callWall = byNet[0]?.strike ?? null;
-    putWall = byNet[byNet.length - 1]?.strike ?? null;
-  }
-
-  return { callWall, putWall, gammaMagnet };
+  return computeGexWallsFromSeries(points, stockPrice);
 }
 
 export function summarizeStrikeSeries(points: GexStrikePoint[]): {
