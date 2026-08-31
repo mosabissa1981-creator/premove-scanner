@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildSignals, scoreSignals, discoveryRank } from "@/lib/scoring/confluence";
+import {
+  buildSignals,
+  scoreSignals,
+  discoveryRank,
+  resolveCandidateForTicker,
+} from "@/lib/scoring/confluence";
 import type { CandidateMeta, SignalDetail } from "@/lib/unusualwhales/types";
 
 type SignalInput = Parameters<typeof buildSignals>[0];
@@ -102,5 +107,55 @@ describe("discoveryRank", () => {
       inCoilScreener: true,
     };
     expect(discoveryRank(multi)).toBeGreaterThan(discoveryRank(single));
+  });
+});
+
+describe("resolveCandidateForTicker", () => {
+  it("marks flat-call and flow sources using the same bucket filters as discoverCandidates", async () => {
+    const client = {
+      stockScreener: async (params: Record<string, string | undefined>) => {
+        if (params.min_net_call_premium) {
+          return {
+            data: [
+              {
+                ticker: "RKLB",
+                close: "24.50",
+                bullish_premium: "400000",
+                bearish_premium: "100000",
+                call_premium: "300000",
+                put_premium: "50000",
+                total_oi_change_perc: "8",
+                next_earnings_date: "2026-09-15",
+              },
+            ],
+          };
+        }
+        if (params.min_total_oi_change_perc) {
+          return { data: [] };
+        }
+        return { data: [] };
+      },
+      tickerFlowAlerts: async () => ({
+        data: [{ ticker: "RKLB", total_premium: "150000", underlying_price: "24.5" }],
+      }),
+      optionsVolume: async () => ({
+        data: [
+          {
+            bullish_premium: "400000",
+            bearish_premium: "100000",
+            call_premium: "300000",
+            put_premium: "50000",
+            net_call_premium: "300000",
+            net_put_premium: "50000",
+          },
+        ],
+      }),
+    };
+
+    const candidate = await resolveCandidateForTicker(client as never, "RKLB");
+    expect(candidate.sources).toEqual(["flat-call", "flow"]);
+    expect(candidate.inCoilScreener).toBe(true);
+    expect(candidate.inFlowAlerts).toBe(true);
+    expect(candidate.entry.premium).toBeGreaterThan(0);
   });
 });

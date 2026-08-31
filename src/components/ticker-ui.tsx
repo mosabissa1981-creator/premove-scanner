@@ -29,6 +29,48 @@ export function TierBadge({ tier, label }: { tier: TickerAnalysis["tier"]; label
   );
 }
 
+function scorePctTone(scorePct: number): { text: string; bar: string } {
+  if (scorePct >= 65) return { text: "text-emerald-400", bar: "bg-emerald-500" };
+  if (scorePct >= 40) return { text: "text-sky-400", bar: "bg-sky-500" };
+  return { text: "text-amber-400", bar: "bg-amber-500" };
+}
+
+/** Sticky confluence context — score % and tier, shared by scanner cards and ticker deep-dive. */
+export function ConfluenceContextWidget({ analysis }: { analysis: TickerAnalysis }) {
+  const tone = scorePctTone(analysis.scorePct);
+
+  return (
+    <div className="sticky top-0 z-20 flex w-full min-w-0 flex-wrap items-center justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-950/95 p-4 shadow-lg shadow-black/20 backdrop-blur">
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+          Confluence Score
+        </p>
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className={`text-3xl font-bold tabular-nums ${tone.text}`}>
+            {analysis.scorePct}%
+          </span>
+          <span className="text-sm text-zinc-500">
+            {Number.isInteger(analysis.score) ? analysis.score : analysis.score.toFixed(1)} /{" "}
+            {analysis.maxScore} pts
+          </span>
+        </div>
+        <div className="mt-2 h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-zinc-800">
+          <div
+            className={`h-full rounded-full ${tone.bar}`}
+            style={{ width: `${analysis.scorePct}%` }}
+          />
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-2">
+        <TierBadge tier={analysis.tier} label={analysis.phaseLabel} />
+        <span className="rounded-full bg-violet-500/10 px-2.5 py-0.5 text-[10px] font-medium text-violet-300">
+          {analysis.holdTime}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function ScoreRing({ score, maxScore }: { score: number; maxScore: number }) {
   const pct = maxScore > 0 ? (score / maxScore) * 100 : 0;
   const text =

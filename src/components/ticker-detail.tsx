@@ -30,15 +30,44 @@ export function WatchlistButton({ ticker }: { ticker: string }) {
   );
 }
 
-export function TickerDetailView({ analysis }: { analysis: TickerAnalysis }) {
+export function TickerDetailView({
+  analysis,
+  showScoreHeader = true,
+}: {
+  analysis: TickerAnalysis;
+  showScoreHeader?: boolean;
+}) {
   return (
     <div className="w-full min-w-0 space-y-6 overflow-x-clip">
-      <div className="grid w-full min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold sm:text-3xl">{analysis.ticker}</h1>
-            <TierBadge tier={analysis.tier} label={analysis.phaseLabel} />
+      {showScoreHeader ? (
+        <div className="grid w-full min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold sm:text-3xl">{analysis.ticker}</h1>
+              <TierBadge tier={analysis.tier} label={analysis.phaseLabel} />
+            </div>
+            {analysis.companyName && (
+              <p className="mt-1 truncate text-zinc-400">{analysis.companyName}</p>
+            )}
+            {analysis.stockPrice != null && analysis.stockPrice > 0 && (
+              <p className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xl font-semibold tabular-nums sm:text-2xl">
+                <span>${analysis.stockPrice.toFixed(2)}</span>
+                <span
+                  className={`text-sm ${analysis.priceChangePct >= 0 ? "text-emerald-400" : "text-red-400"}`}
+                >
+                  {analysis.priceChangePct >= 0 ? "+" : ""}
+                  {analysis.priceChangePct.toFixed(1)}% (30d)
+                </span>
+              </p>
+            )}
           </div>
+          <div className="justify-self-start lg:justify-self-end">
+            <ScoreRing score={analysis.score} maxScore={analysis.maxScore} />
+          </div>
+        </div>
+      ) : (
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold sm:text-3xl">{analysis.ticker}</h1>
           {analysis.companyName && (
             <p className="mt-1 truncate text-zinc-400">{analysis.companyName}</p>
           )}
@@ -54,10 +83,7 @@ export function TickerDetailView({ analysis }: { analysis: TickerAnalysis }) {
             </p>
           )}
         </div>
-        <div className="justify-self-start lg:justify-self-end">
-          <ScoreRing score={analysis.score} maxScore={analysis.maxScore} />
-        </div>
-      </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <span className="rounded-full bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-300">

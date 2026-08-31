@@ -248,6 +248,19 @@ export function scoreSignals(signals: SignalDetail[]): {
   };
 }
 
+export const EMPTY_OPTIONS_VOLUME_ENTRY: OptionsVolumeEntry = {
+  bearishPremium: 0,
+  bullishPremium: 0,
+  premium: 0,
+  premiumRatio: 1,
+  tradeCount: 0,
+  volume: 0,
+};
+
+export function optionsVolumeToEntry(row: UwStockScreenerRow | UwOptionsVolume): OptionsVolumeEntry {
+  return toVolumeEntry(row);
+}
+
 function toVolumeEntry(row: UwStockScreenerRow | UwOptionsVolume): OptionsVolumeEntry {
   const bullish = parseNum(row.bullish_premium);
   const bearish = parseNum(row.bearish_premium);
@@ -281,6 +294,135 @@ function screenerToCandidate(row: UwStockScreenerRow, source: string): Candidate
     relativeVolume: relativeVolume(row),
     week52High: optionalNum(row.week_52_high),
   };
+}
+
+function screenerRowForTicker(
+  rows: UwStockScreenerRow[] | undefined,
+  ticker: string,
+): UwStockScreenerRow | undefined {
+  const upper = ticker.toUpperCase();
+  return rows?.find((row) => row.ticker.toUpperCase() === upper);
+}
+
+function candidateFromFlowAlert(alert: UwFlowAlert, sources: string[] = ["flow"]): CandidateMeta {
+  const price = parseNum(alert.underlying_price);
+  const ask = parseNum(alert.total_ask_side_prem);
+  const bid = parseNum(alert.total_bid_side_prem);
+  const bullish = ask > bid ? ask : parseNum(alert.total_premium) * 0.6;
+  const bearish = bid > 0 ? bid : parseNum(alert.total_premium) * 0.4;
+
+  return {
+    ticker: alert.ticker.toUpperCase(),
+    stockPrice: price,
+    entry: {
+      bullishPremium: bullish,
+      bearishPremium: bearish,
+      premium: parseNum(alert.total_premium),
+      premiumRatio: bullish > 0 ? bearish / bullish : 1,
+      tradeCount: 0,
+      volume: 0,
+    },
+    inCoilScreener: false,
+    inFlowAlerts: true,
+    sources,
+    nextEarnings: null,
+    oiChangePerc: null,
+    relativeVolume: null,
+    week52High: null,
+  };
+}
+
+/**
+ * Resolve discovery metadata for one ticker using the same UW screener buckets
+ * and flow thresholds as `discoverCandidates`, so deep-dive analysis matches scan cards.
+ */
+export async function resolveCandidateForTicker(
+  client: UnusualWhalesClient,
+  ticker: string,
+  opts: { date?: string } = {},
+): Promise<CandidateMeta> {
+  const upper = ticker.toUpperCase();
+  const { date } = opts;
+
+  const [flatCallRes, oiChangeRes, flowRes, volRes, overviewRes] = await Promise.all([
+    client.stockScreener({
+      ticker: upper,
+      min_change: "-2",
+      max_change: "2",
+      min_net_call_premium: "250000",
+      date,
+    }) as Promise<UwDataResponse<UwStockScreenerRow[]>>,
+    client.stockScreener({
+      ticker: upper,
+      min_change: "-3",
+      max_change: "3",
+      min_total_oi_change_perc: "5",
+      date,
+    }) as Promise<UwDataResponse<UwStockScreenerRow[]>>,
+    client.tickerFlowAlerts(upper, 15) as Promise<UwDataResponse<UwFlowAlert[]>>,
+    client.optionsVolume(upper) as Promise<UwDataResponse<UwOptionsVolume[]>>,
+    client.stockScreener({ ticker: upper, date }) as Promise<UwDataResponse<UwStockScreenerRow[]>>,
+  ]);
+
+  const sources: string[] = [];
+  if (screenerRowForTicker(flatCallRes.data, upper)) sources.push("flat-call");
+  if (screenerRowForTicker(oiChangeRes.data, upper)) sources.push("oi-change");
+
+  const flowAlerts = flowRes.data ?? [];
+  const inFlowAlerts = flowAlerts.some((a) => parseNum(a.total_premium) >= 100_000);
+  if (inFlowAlerts) sources.push("flow");
+
+  const row =
+    screenerRowForTicker(flatCallRes.data, upper) ??
+    screenerRowForTicker(oiChangeRes.data, upper) ??
+    screenerRowForTicker(overviewRes.data, upper);
+
+  const vol = volRes.data?.[0];
+  if (vol) {
+    return {
+      ticker: upper,
+      sector: row?.sector,
+      stockPrice: row ? parseNum(row.close) : undefined,
+      entry: toVolumeEntry(vol),
+      inCoilScreener: sources.includes("flat-call") || sources.includes("oi-change"),
+      inFlowAlerts,
+      sources: sources.length ? sources : undefined,
+      nextEarnings: row?.next_earnings_date ?? null,
+      oiChangePerc: row ? optionalNum(row.total_oi_change_perc) : null,
+      relativeVolume: row ? relativeVolume(row) : null,
+      week52High: row ? optionalNum(row.week_52_high) : null,
+    };
+  }
+
+  if (row) {
+    return {
+      ...screenerToCandidate(row, sources[0] ?? "overview"),
+      inFlowAlerts,
+      sources: sources.length ? sources : ["overview"],
+      inCoilScreener: sources.includes("flat-call") || sources.includes("oi-change"),
+    };
+  }
+
+  if (inFlowAlerts && flowAlerts[0]) {
+    return candidateFromFlowAlert(flowAlerts[0], sources);
+  }
+
+  return {
+    ticker: upper,
+    entry: EMPTY_OPTIONS_VOLUME_ENTRY,
+    inCoilScreener: false,
+    inFlowAlerts: false,
+  };
+}
+
+/** Single-ticker entry point — same candidate resolution + analysis as the landing scan. */
+export async function runTickerAnalysis(
+  client: UnusualWhalesClient,
+  ticker: string,
+  opts: { date?: string } = {},
+): Promise<TickerAnalysis> {
+  const candidate = await resolveCandidateForTicker(client, ticker, opts);
+  return analyzeTicker(client, candidate);
 }
 
 /** Discovery rank — how promising a candidate is before deep analysis. */
@@ -362,30 +504,7 @@ export async function discoverCandidates(
       continue;
     }
 
-    const price = parseNum(alert.underlying_price);
-    const ask = parseNum(alert.total_ask_side_prem);
-    const bid = parseNum(alert.total_bid_side_prem);
-    const bullish = ask > bid ? ask : parseNum(alert.total_premium) * 0.6;
-    const bearish = bid > 0 ? bid : parseNum(alert.total_premium) * 0.4;
-    merged.set(alert.ticker, {
-      ticker: alert.ticker,
-      stockPrice: price,
-      entry: {
-        bullishPremium: bullish,
-        bearishPremium: bearish,
-        premium: parseNum(alert.total_premium),
-        premiumRatio: bullish > 0 ? bearish / bullish : 1,
-        tradeCount: 0,
-        volume: 0,
-      },
-      inCoilScreener: false,
-      inFlowAlerts: true,
-      sources: ["flow"],
-      nextEarnings: null,
-      oiChangePerc: null,
-      relativeVolume: null,
-      week52High: null,
-    });
+    merged.set(alert.ticker, candidateFromFlowAlert(alert));
   }
 
   return [...merged.values()]

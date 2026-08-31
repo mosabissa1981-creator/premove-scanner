@@ -1,31 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { UnusualWhalesClient, resolveApiKey } from "@/lib/unusualwhales/client";
-import { analyzeTicker } from "@/lib/scoring/confluence";
-import type { CandidateMeta, OptionsVolumeEntry } from "@/lib/unusualwhales/types";
-import type { UwDataResponse, UwOptionsVolume } from "@/lib/unusualwhales/types";
-
-function volumeEntry(vol: UwOptionsVolume): OptionsVolumeEntry {
-  const bullish = parseFloat(vol.bullish_premium) || 0;
-  const bearish = parseFloat(vol.bearish_premium) || 0;
-  return {
-    bullishPremium: bullish,
-    bearishPremium: bearish,
-    premium: (parseFloat(vol.call_premium) || 0) + (parseFloat(vol.put_premium) || 0),
-    premiumRatio: bullish > 0 ? bearish / bullish : 1,
-    tradeCount: 0,
-    volume: (vol.call_volume ?? 0) + (vol.put_volume ?? 0),
-  };
-}
-
-const emptyEntry: OptionsVolumeEntry = {
-  bearishPremium: 0,
-  bullishPremium: 0,
-  premium: 0,
-  premiumRatio: 1,
-  tradeCount: 0,
-  volume: 0,
-};
+import { runTickerAnalysis } from "@/lib/scoring/confluence";
 
 export async function POST(request: Request) {
   const cookieStore = await cookies();
@@ -53,22 +29,7 @@ export async function POST(request: Request) {
 
   for (const ticker of tickers) {
     try {
-      let entry = emptyEntry;
-      try {
-        const volRes = (await client.optionsVolume(ticker)) as UwDataResponse<UwOptionsVolume[]>;
-        if (volRes.data?.[0]) entry = volumeEntry(volRes.data[0]);
-      } catch {
-        // continue with empty entry
-      }
-
-      const candidate: CandidateMeta = {
-        ticker,
-        entry,
-        inCoilScreener: false,
-        inFlowAlerts: false,
-      };
-
-      results.push(await analyzeTicker(client, candidate));
+      results.push(await runTickerAnalysis(client, ticker));
       await new Promise((r) => setTimeout(r, 350));
     } catch (err) {
       errors.push(`${ticker}: ${err instanceof Error ? err.message : "Failed"}`);
