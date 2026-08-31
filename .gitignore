@@ -8,3 +8,5 @@ node_modules/
 *.log
 .DS_Store
 .vercel
+prisma/dev.db
+prisma/dev.db-journal

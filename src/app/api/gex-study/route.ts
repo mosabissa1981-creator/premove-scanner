@@ -33,19 +33,21 @@ export async function GET(request: Request) {
   const expiryParam = searchParams.get("expiry");
   const modeParam = (searchParams.get("mode") ?? "weekly") as GexExpiryMode;
   const mode = EXPIRY_MODES.has(modeParam) ? modeParam : "weekly";
+  const odteOnly = searchParams.get("odteOnly") === "true";
 
   try {
     const client = new UnusualWhalesClient(apiKey);
+    const studyOptions = { odteOnly };
 
     if (expiryParam === "all") {
-      const result = await fetchGexStudy(client, ticker, "all");
+      const result = await fetchGexStudy(client, ticker, "all", studyOptions);
       return NextResponse.json(result, {
         headers: { "Cache-Control": "no-store, max-age=0" },
       });
     }
 
     if (expiryParam) {
-      const result = await fetchGexStudy(client, ticker, expiryParam.slice(0, 10));
+      const result = await fetchGexStudy(client, ticker, expiryParam.slice(0, 10), studyOptions);
       return NextResponse.json(result, {
         headers: { "Cache-Control": "no-store, max-age=0" },
       });
@@ -58,7 +60,7 @@ export async function GET(request: Request) {
       mode === "all"
         ? "all"
         : resolveStudyExpiry(exposureRes.data ?? [], null, mode);
-    const result = await fetchGexStudy(client, ticker, expiry);
+    const result = await fetchGexStudy(client, ticker, expiry, studyOptions);
     return NextResponse.json(result, {
       headers: { "Cache-Control": "no-store, max-age=0" },
     });

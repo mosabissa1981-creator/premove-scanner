@@ -15,6 +15,7 @@ import type {
   UwStockScreenerRow,
 } from "@/lib/unusualwhales/types";
 import { computeGexLevelsFromUw } from "@/lib/scoring/gex";
+import { fireProximityAlert } from "@/lib/alerts/webhook";
 import { derivePhase } from "@/lib/scoring/phases";
 import {
   calculateCoilMetrics,
@@ -687,6 +688,18 @@ export async function runConfluenceScan(
       b.score - a.score ||
       (b.inFlowAlerts && b.inCoilScreener ? 1 : 0) - (a.inFlowAlerts && a.inCoilScreener ? 1 : 0),
   );
+
+  for (const analysis of results) {
+    if (analysis.tier !== "ready") continue;
+    fireProximityAlert({
+      ticker: analysis.ticker,
+      scorePct: analysis.scorePct,
+      spotPrice: analysis.stockPrice ?? analysis.gex?.stockPrice,
+      gammaFlip: analysis.gex?.gammaFlip,
+      putWall: analysis.gex?.putWall,
+      callWall: analysis.gex?.callWall,
+    });
+  }
 
   return {
     results,
