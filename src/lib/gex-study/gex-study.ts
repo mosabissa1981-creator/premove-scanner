@@ -1250,9 +1250,10 @@ export async function fetchGexStudy(
     ? computeGexLevelsFromUw(mergedOiLevels, stockPrice ?? 0)
     : null;
 
-  let callWall = levels?.callWall ?? null;
-  let putWall = levels?.putWall ?? null;
-  let gammaMagnet = levels?.gammaMagnet ?? null;
+  // Never seed walls from UW OI levels — those are open-interest peaks, not dollar GEX.
+  let callWallStrike: number | null = null;
+  let putWallStrike: number | null = null;
+  let gammaMagnet: number | null = levels?.gammaMagnet ?? null;
   const spot = stockPrice ?? 0;
   const saneProfileFlip =
     profileFlip != null && spot > 0 && isSaneGammaFlip(profileFlip, spot) ? profileFlip : null;
@@ -1284,17 +1285,12 @@ export async function fetchGexStudy(
     if (simulated.usedSimulation) profileSource = "simulated";
   }
 
-  if (!useAll) {
-    const walls = computeWallsFromSeries(fullSeries, stockPrice);
-    callWall = walls.callWall;
-    putWall = walls.putWall;
-    gammaMagnet = walls.gammaMagnet;
-  } else {
-    const walls = computeWallsFromSeries(fullSeries, stockPrice);
-    putWall = walls.putWall ?? putWall;
-    callWall = walls.callWall ?? callWall;
-    gammaMagnet = gammaMagnet ?? walls.gammaMagnet;
-  }
+  // Walls from the same dollar-GEX strike series shown on the chart (never OI).
+  const wallSeries = chartStrikes ?? fullSeries;
+  const walls = computeWallsFromSeries(wallSeries, stockPrice);
+  callWallStrike = walls.callWall;
+  putWallStrike = walls.putWall;
+  gammaMagnet = walls.gammaMagnet ?? gammaMagnet;
 
   let regime: GexStudyResult["regime"] = "neutral";
   let flipDistancePct: number | null = null;
@@ -1308,8 +1304,8 @@ export async function fetchGexStudy(
     expiry,
     scannedAt: new Date().toISOString(),
     stockPrice,
-    callWall,
-    putWall,
+    callWall: callWallStrike,
+    putWall: putWallStrike,
     gammaFlip,
     gammaMagnet,
     netGex: totals.netGex,

@@ -396,12 +396,17 @@ export function gammaFlipFromRawProfile(
 }
 
 // ---------------------------------------------------------------------------
-// GEX wall detection (dollar exposure peaks — not OI / contract count)
+// GEX wall detection (dollar exposure peaks — never OI / contract count)
 // ---------------------------------------------------------------------------
 
 export interface GexWallStrikeInput {
   strike: number;
+  /** Net dollar GEX (calls positive, puts negative contribution). */
   netGex: number;
+  /** Optional call-side dollar GEX; used when present (OptionCharts-style). */
+  callGex?: number;
+  /** Optional put-side dollar GEX (typically ≤ 0); used when present. */
+  putGex?: number;
 }
 
 export interface GexWallsResult {
@@ -411,9 +416,15 @@ export interface GexWallsResult {
 }
 
 /**
- * Put/call walls from per-strike dollar GEX bars (OptionCharts-style).
- * - Put wall: below spot, strike with the largest |negative net GEX|
- * - Call wall: above spot, strike with the largest positive net GEX
+ * Put/call walls from per-strike dollar GEX (OptionCharts-style).
+ *
+ * - **Call wall** (`callWallStrike`): strike with the maximum positive call-side
+ *   dollar GEX (falls back to maximum positive net GEX).
+ * - **Put wall** (`putWallStrike`): strike with the maximum absolute negative
+ *   put-side dollar GEX — `Math.abs(min putGex)` — falling back to
+ *   `Math.abs(min netGex)` when putGex is absent.
+ *
+ * Never uses open interest or contract counts.
  */
 export function computeGexWallsFromSeries(
   points: GexWallStrikeInput[],
@@ -423,12 +434,17 @@ export function computeGexWallsFromSeries(
     return { callWall: null, putWall: null, gammaMagnet: null };
   }
 
-  let callWall: number | null = null;
-  let callMax = -Infinity;
-  let putWall: number | null = null;
-  let putMin = 0;
+  let callWallStrike: number | null = null;
+  let callWallScore = -Infinity;
+  let putWallStrike: number | null = null;
+  let putWallScore = -Infinity; // max |negative dollar GEX|
   let gammaMagnet: number | null = null;
   let magnetAbs = -Infinity;
+
+  const belowSpot = (strike: number) =>
+    stockPrice == null || stockPrice <= 0 || strike < stockPrice;
+  const aboveSpot = (strike: number) =>
+    stockPrice == null || stockPrice <= 0 || strike > stockPrice;
 
   for (const point of points) {
     const absNet = Math.abs(point.netGex);
@@ -437,30 +453,31 @@ export function computeGexWallsFromSeries(
       gammaMagnet = point.strike;
     }
 
-    if (stockPrice != null && stockPrice > 0) {
-      if (point.strike > stockPrice && point.netGex > 0 && point.netGex > callMax) {
-        callMax = point.netGex;
-        callWall = point.strike;
-      }
-      if (point.strike < stockPrice && point.netGex < 0 && point.netGex < putMin) {
-        putMin = point.netGex;
-        putWall = point.strike;
-      }
+    // Call wall: peak positive call dollar GEX (else peak positive net GEX)
+    const callScore =
+      point.callGex != null && Number.isFinite(point.callGex)
+        ? point.callGex
+        : point.netGex;
+    if (aboveSpot(point.strike) && callScore > 0 && callScore > callWallScore) {
+      callWallScore = callScore;
+      callWallStrike = point.strike;
+    }
+
+    // Put wall: peak |negative| put dollar GEX (else |negative| net GEX)
+    const putRaw =
+      point.putGex != null && Number.isFinite(point.putGex)
+        ? point.putGex
+        : point.netGex;
+    const putAbs = putRaw < 0 ? Math.abs(putRaw) : 0;
+    if (belowSpot(point.strike) && putAbs > putWallScore) {
+      putWallScore = putAbs;
+      putWallStrike = point.strike;
     }
   }
 
-  if (stockPrice == null) {
-    for (const point of points) {
-      if (point.netGex > 0 && point.netGex > callMax) {
-        callMax = point.netGex;
-        callWall = point.strike;
-      }
-      if (point.netGex < 0 && point.netGex < putMin) {
-        putMin = point.netGex;
-        putWall = point.strike;
-      }
-    }
-  }
-
-  return { callWall, putWall, gammaMagnet };
+  return {
+    callWall: callWallStrike,
+    putWall: putWallStrike,
+    gammaMagnet,
+  };
 }
