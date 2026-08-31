@@ -1,5 +1,6 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
 import {
+  buildRebaseAtFlipProfile,
   dedupeChainLegs,
   gammaFlipFromRawProfile,
   mergeSimulatedProfileOntoBars,
@@ -1161,13 +1162,13 @@ function buildBarRebasedProfile(
   return buildCumulativeProfileAtFlip(bars, stockPrice, gammaFlip, profileSource ?? bars);
 }
 
-function buildSimulatedChartStrikes(
+export function buildSimulatedChartStrikes(
   bars: GexStrikePoint[],
   legs: OptionChainLeg[],
   stockPrice: number,
   tradingDate: string,
   gammaFlip: number | null,
-  profileSource: GexStrikePoint[],
+  _profileSource: GexStrikePoint[],
 ): { strikes: GexStrikePoint[]; simulatedFlip: number | null; usedSimulation: boolean } {
   const raw = simulateRawNetGexProfile(legs, stockPrice, {
     asOfDate: tradingDate,
@@ -1182,31 +1183,11 @@ function buildSimulatedChartStrikes(
   const windowed = filterStrikeWindow(bars, stockPrice);
   if (!windowed.length) return { strikes: bars, simulatedFlip, usedSimulation: false };
 
-  const bidirectional = buildProfileAtFlip(
-    profileSource.map((point) => point.strike),
-    profileSource.map((point) => point.netGex),
-    anchorFlip,
-  );
-
   const minStrike = windowed[0].strike;
   const maxStrike = windowed[windowed.length - 1].strike;
-  const windowProfile = raw
-    .filter((point) => point.simulatedSpot >= minStrike && point.simulatedSpot <= maxStrike)
-    .map((point) => ({
-      simulatedSpot: point.simulatedSpot,
-      profile:
-        interpolateProfileAtStrike(
-          bidirectional.map((row) => ({
-            strike: row.x,
-            callGex: 0,
-            putGex: 0,
-            netGex: 0,
-            profile: row.profile,
-          })),
-          point.simulatedSpot,
-        ) ?? 0,
-      rawNetGex: point.rawNetGex,
-    }));
+  const windowProfile = buildRebaseAtFlipProfile(raw, anchorFlip).filter(
+    (point) => point.simulatedSpot >= minStrike && point.simulatedSpot <= maxStrike,
+  );
 
   const strikes = mergeSimulatedProfileOntoBars(windowed, windowProfile, anchorFlip);
   return { strikes, simulatedFlip, usedSimulation: true };
