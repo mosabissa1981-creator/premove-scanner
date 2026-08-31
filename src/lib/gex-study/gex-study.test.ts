@@ -562,7 +562,7 @@ describe("computeWallsFromSeries", () => {
   it("finds put wall below spot and call wall above spot", () => {
     const series = buildStrikeSeries(rows);
     const walls = computeWallsFromSeries(series, 64);
-    expect(walls.putWall).toBe(50);
+    expect(walls.putWall).toBe(60);
     expect(walls.callWall).toBe(75);
   });
 });

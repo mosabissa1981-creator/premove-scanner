@@ -6,6 +6,7 @@ import {
   buildLocalizedBarProfileAtFlip,
   buildProfileAtFlip,
   buildProfileAtFlipFromIsolated,
+  computeGexWallsFromSeries,
   gammaFlipFromRawProfile,
   interpolateSeriesAtX,
   rebaseProfileAtFlip,
@@ -173,6 +174,35 @@ describe("rebaseProfileAtFlip", () => {
       const match = isolated.find((row) => row.x === point.x);
       expect(point.profile).toBeCloseTo(match?.profile ?? 0, 6);
     }
+  });
+});
+
+describe("computeGexWallsFromSeries", () => {
+  it("picks put wall by peak negative dollar GEX below spot (MSTR-like)", () => {
+    const spot = 128.5;
+    const series = [
+      { strike: 95, netGex: -500_000 },
+      { strike: 110, netGex: -1_000_000 },
+      { strike: 125, netGex: -8_000_000 },
+      { strike: 130, netGex: 12_000_000 },
+      { strike: 140, netGex: 4_000_000 },
+    ];
+    const walls = computeGexWallsFromSeries(series, spot);
+    expect(walls.putWall).toBe(125);
+    expect(walls.callWall).toBe(130);
+  });
+
+  it("ignores shallow positive net GEX below spot when finding put wall", () => {
+    const series = [
+      { strike: 50, netGex: 80_000 },
+      { strike: 55, netGex: 50_000 },
+      { strike: 60, netGex: -30_000 },
+      { strike: 70, netGex: 140_000 },
+      { strike: 75, netGex: 195_000 },
+    ];
+    const walls = computeGexWallsFromSeries(series, 64);
+    expect(walls.putWall).toBe(60);
+    expect(walls.callWall).toBe(75);
   });
 });
 

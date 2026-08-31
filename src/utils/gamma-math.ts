@@ -394,3 +394,73 @@ export function gammaFlipFromRawProfile(
 
   return deepest;
 }
+
+// ---------------------------------------------------------------------------
+// GEX wall detection (dollar exposure peaks — not OI / contract count)
+// ---------------------------------------------------------------------------
+
+export interface GexWallStrikeInput {
+  strike: number;
+  netGex: number;
+}
+
+export interface GexWallsResult {
+  callWall: number | null;
+  putWall: number | null;
+  gammaMagnet: number | null;
+}
+
+/**
+ * Put/call walls from per-strike dollar GEX bars (OptionCharts-style).
+ * - Put wall: below spot, strike with the largest |negative net GEX|
+ * - Call wall: above spot, strike with the largest positive net GEX
+ */
+export function computeGexWallsFromSeries(
+  points: GexWallStrikeInput[],
+  stockPrice: number | null,
+): GexWallsResult {
+  if (!points.length) {
+    return { callWall: null, putWall: null, gammaMagnet: null };
+  }
+
+  let callWall: number | null = null;
+  let callMax = -Infinity;
+  let putWall: number | null = null;
+  let putMin = 0;
+  let gammaMagnet: number | null = null;
+  let magnetAbs = -Infinity;
+
+  for (const point of points) {
+    const absNet = Math.abs(point.netGex);
+    if (absNet > magnetAbs) {
+      magnetAbs = absNet;
+      gammaMagnet = point.strike;
+    }
+
+    if (stockPrice != null && stockPrice > 0) {
+      if (point.strike > stockPrice && point.netGex > 0 && point.netGex > callMax) {
+        callMax = point.netGex;
+        callWall = point.strike;
+      }
+      if (point.strike < stockPrice && point.netGex < 0 && point.netGex < putMin) {
+        putMin = point.netGex;
+        putWall = point.strike;
+      }
+    }
+  }
+
+  if (stockPrice == null) {
+    for (const point of points) {
+      if (point.netGex > 0 && point.netGex > callMax) {
+        callMax = point.netGex;
+        callWall = point.strike;
+      }
+      if (point.netGex < 0 && point.netGex < putMin) {
+        putMin = point.netGex;
+        putWall = point.strike;
+      }
+    }
+  }
+
+  return { callWall, putWall, gammaMagnet };
+}
