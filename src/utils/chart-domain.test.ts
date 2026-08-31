@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   BAR_HEIGHT_RATIO,
+  buildUnifiedChartData,
   createBarYScale,
   createProfileYScale,
   createStrikeXScale,
+  profileSeriesFromUnified,
   profileSeriesPoints,
+  resolvePlotStrikeDomain,
+  splitStrikeSeriesForChart,
   strikeDomainFromValues,
+  strikeToPlotX,
   symmetricDomain,
 } from "@/utils/chart-domain";
 
@@ -100,5 +105,89 @@ describe("profileSeriesPoints", () => {
     ]);
     expect(series.map((point) => point.strike)).toEqual([250, 270]);
     expect(series[1]?.profile).toBe(200);
+  });
+});
+
+describe("strikeToPlotX", () => {
+  it("matches createStrikeXScale.toX for profile path and reference lines", () => {
+    const scale = createStrikeXScale(45, 80, 82, 556);
+    expect(strikeToPlotX(65.5, 45, 80, 82, 556)).toBeCloseTo(scale.toX(65.5), 6);
+    expect(strikeToPlotX(67.02, 45, 80, 82, 556)).toBeCloseTo(scale.toX(67.02), 6);
+  });
+});
+
+describe("resolvePlotStrikeDomain", () => {
+  it("uses dataMin/dataMax when at full zoom", () => {
+    const bounds = { min: 45, max: 80 };
+    const viewport = { min: 43, max: 90 };
+    const domain = resolvePlotStrikeDomain(viewport, bounds, [50, 63, 67, 75]);
+    expect(domain).toEqual({ domainMin: 50, domainMax: 75 });
+  });
+
+  it("uses the zoomed viewport when narrowed", () => {
+    const bounds = { min: 45, max: 80 };
+    const viewport = { min: 60, max: 70 };
+    const domain = resolvePlotStrikeDomain(viewport, bounds, [62, 65, 68]);
+    expect(domain).toEqual({ domainMin: 60, domainMax: 70 });
+  });
+});
+
+describe("buildUnifiedChartData", () => {
+  it("merges dense profile steps with sparse bar strikes on one strike axis", () => {
+    const unified = buildUnifiedChartData(
+      [
+        { strike: 63.0, profile: -100 },
+        { strike: 63.1, profile: -90 },
+        { strike: 67.0, profile: 200 },
+      ],
+      [{ strike: 63, netGex: -500_000, callGex: 0, putGex: -500_000 }],
+    );
+
+    expect(unified.map((point) => point.strike)).toEqual([63, 63.1, 67]);
+    expect(unified[0]?.netGex).toBe(-500_000);
+    expect(unified[0]?.gammaProfile).toBe(-100);
+    expect(unified[1]?.netGex).toBeNull();
+    expect(unified[2]?.gammaProfile).toBe(200);
+  });
+
+  it("keeps wall coordinates on the same linear strike scale as bars and profile", () => {
+    const unified = buildUnifiedChartData(
+      [
+        { strike: 60, profile: -50 },
+        { strike: 63, profile: -80 },
+        { strike: 67, profile: 120 },
+        { strike: 70, profile: 40 },
+      ],
+      [
+        { strike: 63, netGex: -1, callGex: 0, putGex: -1 },
+        { strike: 67, netGex: 1, callGex: 1, putGex: 0 },
+      ],
+    );
+
+    const scale = createStrikeXScale(60, 70, 0, 400);
+    const bar63 = unified.find((point) => point.strike === 63);
+    const bar67 = unified.find((point) => point.strike === 67);
+    expect(bar63?.netGex).toBe(-1);
+    expect(bar67?.netGex).toBe(1);
+
+    const putWallX = scale.toX(63);
+    const gammaFlipX = scale.toX(67);
+    expect(scale.toX(bar63!.strike)).toBeCloseTo(putWallX, 4);
+    expect(scale.toX(bar67!.strike)).toBeCloseTo(gammaFlipX, 4);
+    expect(profileSeriesFromUnified(unified).map((point) => point.strike)).toEqual([
+      60, 63, 67, 70,
+    ]);
+  });
+});
+
+describe("splitStrikeSeriesForChart", () => {
+  it("splits merged rows into profile steps and real bar strikes", () => {
+    const { profileCurve, barStrikes } = splitStrikeSeriesForChart([
+      { strike: 63.1, callGex: 0, putGex: 0, netGex: 0, profile: 10 },
+      { strike: 67, callGex: 1, putGex: 0, netGex: 1, profile: 20 },
+    ]);
+    expect(profileCurve).toHaveLength(2);
+    expect(barStrikes).toHaveLength(1);
+    expect(barStrikes[0]?.strike).toBe(67);
   });
 });

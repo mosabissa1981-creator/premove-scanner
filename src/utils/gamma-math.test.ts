@@ -9,6 +9,7 @@ import {
   computeGexWallsFromSeries,
   defaultRiskFreeRate,
   filterLegsByMaxDte,
+  filterLegsForOdte,
   gammaFlipFromRawProfile,
   interpolateSeriesAtX,
   MAX_GEX_PROFILE_DTE,
@@ -197,6 +198,16 @@ describe("filterLegsByMaxDte", () => {
       { strike: 130, type: "C", oi: 5_000, iv: 0.3, expiry: "2027-06-18", dte: 290 },
     ];
     expect(filterLegsByMaxDte(leaps)).toEqual(leaps);
+  });
+});
+
+describe("filterLegsForOdte", () => {
+  it("keeps only contracts expiring on the trading date", () => {
+    const legs: OptionChainLeg[] = [
+      { strike: 100, type: "C", oi: 10, iv: 0.3, expiry: "2026-08-31", dte: 0 },
+      { strike: 105, type: "P", oi: 12, iv: 0.35, expiry: "2026-09-05", dte: 5 },
+    ];
+    expect(filterLegsForOdte(legs, "2026-08-31")).toEqual([legs[0]]);
   });
 });
 

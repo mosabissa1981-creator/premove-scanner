@@ -1,5 +1,12 @@
 "use client";
 
+<<<<<<< HEAD
+import { TickerTerminal } from "@/components/ticker-terminal";
+import type { GexStudyResult } from "@/lib/unusualwhales/types";
+
+export function TickerGexPanel({ study }: { study: GexStudyResult }) {
+  return <TickerTerminal ticker={study.ticker} initialStudy={study} />;
+=======
 import { GexStrikeChart } from "@/components/gex-strike-chart";
 import { formatMoney, formatPrice } from "@/lib/format";
 import type { GexStudyResult } from "@/lib/unusualwhales/types";
@@ -67,4 +74,5 @@ function Stat({
       <div className={`mt-1 text-lg font-bold tabular-nums sm:text-xl ${valueClass}`}>{value}</div>
     </div>
   );
+>>>>>>> origin/main
 }

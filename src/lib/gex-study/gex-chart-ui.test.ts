@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeBackgroundStrikeTicks,
+  layoutPinnedReferenceBadges,
   resolveBottomBadgeLayout,
   resolveLineLabelLayouts,
 } from "@/lib/gex-study/gex-chart-ui";
+import { createStrikeXScale } from "@/utils/chart-domain";
 
 describe("resolveLineLabelLayouts", () => {
   it("rotates labels vertically by default", () => {
@@ -43,6 +46,35 @@ describe("resolveLineLabelLayouts", () => {
       { key: "call", x: 320 },
     ]);
     expect(layouts.every((layout) => layout.dx === 0)).toBe(true);
+  });
+});
+
+describe("computeBackgroundStrikeTicks", () => {
+  it("skips axis ticks that would collide with wall badges (e.g. 65 near 65.50)", () => {
+    const ticks = computeBackgroundStrikeTicks(45, 80, [63, 65.5, 67.02, 67.5], { step: 5 });
+    expect(ticks).toEqual([45, 50, 55, 60, 70, 75, 80]);
+  });
+
+  it("returns no ticks when showTicks is false", () => {
+    expect(
+      computeBackgroundStrikeTicks(45, 80, [67], { step: 5, showTicks: false }),
+    ).toEqual([]);
+  });
+});
+
+describe("layoutPinnedReferenceBadges", () => {
+  it("keeps badges on the same X projection as the profile path", () => {
+    const plotX = createStrikeXScale(45, 80, 0, 400);
+    const badges = layoutPinnedReferenceBadges(
+      [
+        { key: "flip", strike: 65.5, text: "65.50", color: "#fa0" },
+        { key: "put", strike: 67.02, text: "67.02", color: "#f00" },
+      ],
+      (strike) => plotX.toX(strike),
+      360,
+    );
+    expect(badges[0]?.x).toBeCloseTo(plotX.toX(65.5), 4);
+    expect(badges[1]?.x).toBeCloseTo(plotX.toX(67.02), 4);
   });
 });
 

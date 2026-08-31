@@ -9,6 +9,7 @@ import {
   buildLocalizedBarProfileAtFlip,
   computeGexWallsFromSeries,
   filterLegsByMaxDte,
+  filterLegsForOdte,
   gammaFlipFromRawProfile,
   MAX_GEX_PROFILE_DTE,
   simulateRawNetGexProfile,
@@ -24,6 +25,7 @@ import type {
   GexExpiryMode,
   GexStrikePoint,
   GexStudyResult,
+  IvSmilePoint,
   UwCandle,
   UwDataResponse,
   UwGexLevels,
@@ -1128,10 +1130,12 @@ export function buildSimulatedChartStrikes(
   tradingDate: string,
   gammaFlip: number | null,
   _profileSource: GexStrikePoint[],
+  simOptions: { maxDte?: number | null } = {},
 ): { strikes: GexStrikePoint[]; simulatedFlip: number | null; usedSimulation: boolean } {
   const raw = simulateRawNetGexProfile(legs, stockPrice, {
     asOfDate: tradingDate,
     steps: 250,
+    maxDte: simOptions.maxDte,
   });
   if (!raw.length) return { strikes: bars, simulatedFlip: null, usedSimulation: false };
 
@@ -1148,7 +1152,7 @@ export function buildSimulatedChartStrikes(
     legs,
     stockPrice,
     anchorFlip,
-    { asOfDate: tradingDate, steps: 250 },
+    { asOfDate: tradingDate, steps: 250, maxDte: simOptions.maxDte },
   ).filter(
     (point) => point.simulatedSpot >= minStrike && point.simulatedSpot <= maxStrike,
   );
@@ -1157,11 +1161,38 @@ export function buildSimulatedChartStrikes(
   return { strikes, simulatedFlip, usedSimulation: true };
 }
 
+export interface FetchGexStudyOptions {
+  odteOnly?: boolean;
+}
+
+/** Map option-chain legs into IV smile points (strike × IV% by type). */
+export function buildIvSmileFromLegs(legs: OptionChainLeg[]): IvSmilePoint[] {
+  const byKey = new Map<string, IvSmilePoint>();
+
+  for (const leg of legs) {
+    if (leg.strike <= 0 || leg.iv <= 0) continue;
+    const key = `${leg.type}:${leg.strike}`;
+    const existing = byKey.get(key);
+    const ivPct = leg.iv * 100;
+    if (!existing || ivPct > existing.iv) {
+      byKey.set(key, {
+        strike: leg.strike,
+        iv: ivPct,
+        type: leg.type === "P" ? "put" : "call",
+      });
+    }
+  }
+
+  return [...byKey.values()].sort((a, b) => a.strike - b.strike);
+}
+
 export async function fetchGexStudy(
   client: UnusualWhalesClient,
   ticker: string,
   expiry: string,
+  options: FetchGexStudyOptions = {},
 ): Promise<GexStudyResult> {
+  const odteOnly = options.odteOnly ?? false;
   const useAll = expiry === "all";
 
   const ohlcRes = (await client.ohlc(ticker, "1d", 1)) as UwDataResponse<UwCandle[]>;
@@ -1219,13 +1250,17 @@ export async function fetchGexStudy(
   }
 
   const expiryRows = expiryRowsAll;
-  const chainLegs = await fetchOptionChainLegs(
+  let chainLegs = await fetchOptionChainLegs(
     client,
     ticker,
     tradingDate,
     useAll ? undefined : expiry,
     expiryRowsForMath,
   );
+  if (odteOnly) {
+    chainLegs = filterLegsForOdte(chainLegs, tradingDate);
+  }
+  const simMaxDte = odteOnly ? 0 : undefined;
   const availableExpiries = expiryRows
     .map((row) => ({ expiry: expiryKey(row), dte: row.dte }))
     .filter((row) => row.expiry)
@@ -1258,7 +1293,10 @@ export async function fetchGexStudy(
 
   let simulatedFlip: number | null = null;
   if (chainLegs.length >= MIN_CHAIN_LEGS && stockPrice != null && stockPrice > 0) {
-    const raw = simulateRawNetGexProfile(chainLegs, stockPrice, { asOfDate: tradingDate });
+    const raw = simulateRawNetGexProfile(chainLegs, stockPrice, {
+      asOfDate: tradingDate,
+      maxDte: simMaxDte,
+    });
     simulatedFlip = gammaFlipFromRawProfile(raw, stockPrice);
   }
 
@@ -1296,6 +1334,7 @@ export async function fetchGexStudy(
       tradingDate,
       gammaFlip,
       profileStrikeSeries,
+      { maxDte: simMaxDte },
     );
     chartStrikes = simulated.strikes;
     simulatedFlip = simulated.simulatedFlip ?? simulatedFlip;
@@ -1335,5 +1374,7 @@ export async function fetchGexStudy(
     availableExpiries,
     profileSource,
     chainLegCount: chainLegs.filter((leg) => leg.oi > 0).length,
+    odteOnly,
+    ivSmile: buildIvSmileFromLegs(chainLegs),
   };
 }

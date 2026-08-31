@@ -15,17 +15,25 @@ import {
   type StrikeViewport,
 } from "@/lib/gex-study/gex-chart-viewport";
 import {
+  barSeriesFromUnified,
+  buildUnifiedChartData,
   createBarYScale,
   createProfileYScale,
   createStrikeXScale,
-  profileSeriesPoints,
+  plotXToStrike,
+  profileSeriesFromUnified,
+  resolvePlotStrikeDomain,
+  splitStrikeSeriesForChart,
+  unifiedChartToGexPoint,
 } from "@/utils/chart-domain";
 import {
   buildProfileFillPolygons,
+  computeBackgroundStrikeTicks,
   formatChartMoney,
   GEX_CHART_AXIS,
+  GEX_CHART_LAYOUT,
   GEX_CHART_THEME,
-  resolveBottomBadgeLayout,
+  layoutPinnedReferenceBadges,
   resolveLineLabelLayouts,
 } from "@/lib/gex-study/gex-chart-ui";
 
@@ -84,6 +92,22 @@ function touchCenter(touches: TouchList): { x: number; y: number } {
   };
 }
 
+function clientViewBoxX(clientX: number, rect: Pick<DOMRect, "left" | "width">): number {
+  const rel = (clientX - rect.left) / rect.width;
+  return rel * CHART_WIDTH;
+}
+
+function strikeAtClientX(
+  clientX: number,
+  rect: Pick<DOMRect, "left" | "width">,
+  plotX: ReturnType<typeof createStrikeXScale>,
+  plotLeft: number,
+  plotWidth: number,
+): number {
+  const viewBoxX = clientViewBoxX(clientX, rect);
+  return plotXToStrike(viewBoxX, plotX.domainMin, plotX.domainMax, plotLeft, plotWidth);
+}
+
 export function GexStrikeChart({
   strikes,
   stockPrice,
@@ -92,13 +116,27 @@ export function GexStrikeChart({
   callWall,
 }: GexStrikeChartProps) {
   const sortedStrikes = useMemo(() => sortStrikesByPrice(strikes), [strikes]);
+  const unifiedChartData = useMemo(() => {
+    const { profileCurve, barStrikes } = splitStrikeSeriesForChart(sortedStrikes);
+    return buildUnifiedChartData(profileCurve, barStrikes);
+  }, [sortedStrikes]);
+  const chartStrikes = useMemo(
+    () => unifiedChartData.map(unifiedChartToGexPoint),
+    [unifiedChartData],
+  );
   const containerRef = useRef<HTMLDivElement>(null);
-  const bounds = useMemo(() => strikeBounds(sortedStrikes), [sortedStrikes]);
+  const bounds = useMemo(() => strikeBounds(chartStrikes), [chartStrikes]);
   const [viewport, setViewport] = useState<StrikeViewport>(() =>
-    initialStrikeViewport(sortedStrikes, stockPrice),
+    initialStrikeViewport(chartStrikes, stockPrice),
   );
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const viewportRef = useRef(viewport);
+  const plotXRef = useRef({
+    domainMin: 0,
+    domainMax: 1,
+    plotLeft: PAD.left,
+    plotW: CHART_WIDTH - PAD.left - PAD.right,
+  });
   const gestureRef = useRef<{
     mode: "none" | "pan" | "pinch" | "tap";
     startViewport: StrikeViewport;
@@ -126,16 +164,18 @@ export function GexStrikeChart({
   }, []);
 
   const resetView = useCallback(() => {
-    const next = initialStrikeViewport(sortedStrikes, stockPrice);
+    const next = initialStrikeViewport(chartStrikes, stockPrice);
     viewportRef.current = next;
     setViewport(next);
     setTooltip(null);
-  }, [stockPrice, sortedStrikes]);
+  }, [stockPrice, chartStrikes]);
 
   const chartDataKey = useMemo(() => {
-    if (!sortedStrikes.length) return "empty";
-    return `${sortedStrikes.length}:${sortedStrikes[0]?.strike}:${sortedStrikes[sortedStrikes.length - 1]?.strike}:${stockPrice ?? ""}`;
-  }, [sortedStrikes, stockPrice]);
+    if (!unifiedChartData.length) return "empty";
+    const first = unifiedChartData[0]?.strike;
+    const last = unifiedChartData[unifiedChartData.length - 1]?.strike;
+    return `${unifiedChartData.length}:${first}:${last}:${stockPrice ?? ""}`;
+  }, [unifiedChartData, stockPrice]);
 
   useEffect(() => {
     resetView();
@@ -144,10 +184,17 @@ export function GexStrikeChart({
   const showTooltipAt = useCallback(
     (clientX: number, clientY: number) => {
       const el = containerRef.current;
-      if (!el || !sortedStrikes.length) return;
+      if (!el || !chartStrikes.length) return;
       const rect = el.getBoundingClientRect();
-      const strike = clientXToStrike(clientX, rect, viewportRef.current);
-      const visible = strikesInViewport(sortedStrikes, viewportRef.current);
+      const { domainMin, domainMax, plotLeft, plotW } = plotXRef.current;
+      const strike = plotXToStrike(
+        clientViewBoxX(clientX, rect),
+        domainMin,
+        domainMax,
+        plotLeft,
+        plotW,
+      );
+      const visible = strikesInViewport(chartStrikes, viewportRef.current);
       const point = nearestStrike(visible, strike);
       if (!point) return;
       setTooltip({
@@ -156,7 +203,7 @@ export function GexStrikeChart({
         y: clientY - rect.top,
       });
     },
-    [sortedStrikes],
+    [chartStrikes],
   );
 
   useEffect(() => {
@@ -304,7 +351,7 @@ export function GexStrikeChart({
     [],
   );
 
-  if (!sortedStrikes.length) {
+  if (!unifiedChartData.length) {
     return (
       <div className="flex h-64 items-center justify-center rounded-xl border border-zinc-800 text-sm text-zinc-500">
         No strike data for this expiry.
@@ -312,23 +359,45 @@ export function GexStrikeChart({
     );
   }
 
-  const visible = strikesInViewport(sortedStrikes, viewport);
-  const barSeries = visible.filter(
-    (point) => point.netGex !== 0 || point.callGex !== 0 || point.putGex !== 0,
+  const visibleUnified = unifiedChartData.filter((point) => {
+    const min = Math.min(viewport.min, viewport.max);
+    const max = Math.max(viewport.min, viewport.max);
+    return point.strike >= min && point.strike <= max;
+  });
+  const barSeries = barSeriesFromUnified(visibleUnified);
+  const profileSeries = profileSeriesFromUnified(visibleUnified);
+
+  const spotStrike = coerceStrike(stockPrice);
+  const wallStrikes = [coerceStrike(putWall), coerceStrike(gammaFlip), coerceStrike(callWall)].filter(
+    (strike): strike is number => strike != null,
   );
-  const profileSeries = profileSeriesPoints(visible);
-  const strikeMin = Math.min(viewport.min, viewport.max);
-  const strikeMax = Math.max(viewport.min, viewport.max);
+  const plottedStrikes = [
+    ...visibleUnified.map((point) => point.strike),
+    ...wallStrikes,
+    ...(spotStrike != null ? [spotStrike] : []),
+  ];
+
+  const { domainMin: strikeMin, domainMax: strikeMax } = resolvePlotStrikeDomain(
+    viewport,
+    bounds,
+    plottedStrikes,
+  );
   const strikeSpan = strikeMax - strikeMin || 1;
 
   const plotW = CHART_WIDTH - PAD.left - PAD.right;
   const plotH = CHART_HEIGHT - PAD.top - PAD.bottom;
 
-  const xAxis = createStrikeXScale(strikeMin, strikeMax, PAD.left, plotW);
-  const xForStrike = (strike: number) => xAxis.toX(strike);
+  const plotX = createStrikeXScale(strikeMin, strikeMax, PAD.left, plotW);
+  plotXRef.current = {
+    domainMin: strikeMin,
+    domainMax: strikeMax,
+    plotLeft: PAD.left,
+    plotW,
+  };
+  const xForStrike = (strike: number) => plotX.toX(strike);
 
   const leftAxis = createBarYScale(
-    barSeries.map((point) => point.netGex),
+    barSeries.map((point) => point.netGex ?? 0),
     PAD.top,
     plotH,
   );
@@ -342,7 +411,7 @@ export function GexStrikeChart({
   const yForProfile = (profile: number) => rightAxis.toY(profile);
   const zeroY = leftAxis.zeroY;
 
-  const barWidth = Math.max(3, Math.min(14, (plotW / Math.max(visible.length, 1)) * 0.72));
+  const barWidth = Math.max(3, Math.min(14, (plotW / Math.max(barSeries.length, 1)) * 0.72));
 
   const profileLine = profileSeries
     .map((point) => `${xForStrike(point.strike)},${yForProfile(point.profile)}`)
@@ -363,20 +432,25 @@ export function GexStrikeChart({
     )
     .sort((a, b) => a.value - b.value);
 
-  const spotStrike = coerceStrike(stockPrice);
-
   const yTicks = leftAxis.ticks;
   const profileAxisTicks = rightAxis.ticks;
   const zoomed = isViewportZoomed(viewport, bounds);
 
+  const reservedStrikes = [
+    ...levels.map((level) => level.value),
+    ...(spotStrike != null ? [spotStrike] : []),
+  ];
+
   const minLabelSpacing = 56;
   const maxXTicks = Math.max(3, Math.floor(plotW / minLabelSpacing));
   const xTickStep = Math.max(1, Math.ceil(strikeSpan / maxXTicks / 5) * 5);
-  const xTicks: number[] = [];
-  const firstTick = Math.ceil(strikeMin / xTickStep) * xTickStep;
-  for (let t = firstTick; t <= strikeMax; t += xTickStep) {
-    xTicks.push(t);
-  }
+  const xTicks = computeBackgroundStrikeTicks(strikeMin, strikeMax, reservedStrikes, {
+    step: xTickStep,
+  });
+
+  const plotBottom = PAD.top + plotH;
+  const axisTickY = plotBottom + 16;
+  const referenceBadgeBaseY = plotBottom + 16 + GEX_CHART_LAYOUT.referenceBadgeDy;
 
   const levelLabelLayouts = resolveLineLabelLayouts(
     levels.map((level) => ({ key: level.label, x: xForStrike(level.value) })),
@@ -384,11 +458,11 @@ export function GexStrikeChart({
   );
   const levelLabelByKey = new Map(levelLabelLayouts.map((layout) => [layout.key, layout]));
 
-  const bottomLabels = resolveBottomBadgeLayout(
+  const bottomLabels = layoutPinnedReferenceBadges(
     [
       ...levels.map((level) => ({
         key: level.label,
-        x: xForStrike(level.value),
+        strike: level.value,
         text: formatStrike(level.value),
         color: level.color,
       })),
@@ -396,7 +470,7 @@ export function GexStrikeChart({
         ? [
             {
               key: "spot",
-              x: xForStrike(spotStrike),
+              strike: spotStrike,
               text: formatStrike(spotStrike),
               color: "#eff6ff",
               pill: true,
@@ -404,8 +478,9 @@ export function GexStrikeChart({
           ]
         : []),
     ],
-    CHART_HEIGHT - 14,
-    { minSpacingPx: 52, rowHeight: 24 },
+    xForStrike,
+    referenceBadgeBaseY,
+    { rowHeight: 24 },
   );
 
   return (
@@ -463,19 +538,20 @@ export function GexStrikeChart({
 
             {barSeries.map((point) => {
               const x = xForStrike(point.strike) - barWidth / 2;
-              const y1 = yForBar(point.netGex);
-              const positive = point.netGex >= 0;
+              const netGex = point.netGex ?? 0;
+              const y1 = yForBar(netGex);
+              const positive = netGex >= 0;
               const selected = tooltip?.point.strike === point.strike;
               return (
                 <g
                   key={`bar-${point.strike}`}
-                  onClick={(e) => onBarClick(point, e)}
+                  onClick={(e) => onBarClick(unifiedChartToGexPoint(point), e)}
                   onMouseEnter={(e) => {
                     const el = containerRef.current;
                     if (!el) return;
                     const rect = el.getBoundingClientRect();
                     setTooltip({
-                      point,
+                      point: unifiedChartToGexPoint(point),
                       x: e.clientX - rect.left,
                       y: e.clientY - rect.top,
                     });
@@ -642,7 +718,7 @@ export function GexStrikeChart({
             <text
               key={`xs-${tick}`}
               x={xForStrike(tick)}
-              y={CHART_HEIGHT - 30}
+              y={axisTickY}
               textAnchor="middle"
               fill="#d4d4d8"
               fontSize={AXIS_FONT}
@@ -686,7 +762,7 @@ export function GexStrikeChart({
           Gamma profile
         </span>
         <span className="text-zinc-500">
-          {visible.length} strikes · {formatStrike(strikeMin)}–{formatStrike(strikeMax)}
+          {visibleUnified.length} points · {formatStrike(strikeMin)}–{formatStrike(strikeMax)}
         </span>
       </div>
     </div>

@@ -80,6 +80,47 @@ export function buildProfileFillPolygons(
   return { negative, positive };
 }
 
+export const GEX_CHART_LAYOUT = {
+  /** Vertical gap between background axis tick row and reference badges (Recharts dy≈10). */
+  referenceBadgeDy: 18,
+  /** Skip axis ticks within this many strike points of a wall/spot label. */
+  axisTickClearanceStrikes: 2.5,
+  /** Preferred round-number step for background axis ticks. */
+  axisTickStep: 5,
+} as const;
+
+/**
+ * Background X-axis strike ticks that avoid colliding with wall/spot reference badges.
+ * Returns an empty list when `showTicks` is false (badges-only mode).
+ */
+export function computeBackgroundStrikeTicks(
+  strikeMin: number,
+  strikeMax: number,
+  reservedStrikes: number[],
+  options?: {
+    step?: number;
+    clearance?: number;
+    showTicks?: boolean;
+  },
+): number[] {
+  if (options?.showTicks === false) return [];
+
+  const step = options?.step ?? GEX_CHART_LAYOUT.axisTickStep;
+  const clearance = options?.clearance ?? GEX_CHART_LAYOUT.axisTickClearanceStrikes;
+  const min = Math.min(strikeMin, strikeMax);
+  const max = Math.max(strikeMin, strikeMax);
+
+  const ticks: number[] = [];
+  const first = Math.ceil(min / step) * step;
+  for (let tick = first; tick <= max; tick += step) {
+    const blocked = reservedStrikes.some(
+      (level) => Number.isFinite(level) && Math.abs(level - tick) < clearance,
+    );
+    if (!blocked) ticks.push(tick);
+  }
+  return ticks;
+}
+
 export function formatChartMoney(value: number, signed = false): string {
   const abs = Math.abs(value);
   const sign = value < 0 ? "-" : signed && value > 0 ? "+" : "";
@@ -104,6 +145,48 @@ export interface LineLabelLayout {
   dx: number;
   /** SVG rotate angle (OptionCharts-style vertical labels). */
   rotate: number;
+}
+
+export interface ReferenceBadgeInput {
+  key: string;
+  strike: number;
+  text: string;
+  color: string;
+  pill?: boolean;
+}
+
+/**
+ * Bottom reference badges pinned to the same strike→X scale as the profile path.
+ * Only stacks vertically when badges would overlap — never shifts horizontally.
+ */
+export function layoutPinnedReferenceBadges(
+  badges: ReferenceBadgeInput[],
+  strikeToX: (strike: number) => number,
+  baseY: number,
+  options?: { rowHeight?: number; minPixelGap?: number },
+): ResolvedBottomBadge[] {
+  const rowHeight = options?.rowHeight ?? 24;
+  const minGap = options?.minPixelGap ?? 44;
+  const sorted = [...badges].sort((a, b) => a.strike - b.strike);
+  const placed: { x: number; row: number }[] = [];
+
+  return sorted.map((badge) => {
+    const x = strikeToX(badge.strike);
+    let row = 0;
+    while (placed.some((slot) => slot.row === row && Math.abs(slot.x - x) < minGap)) {
+      row += 1;
+    }
+    placed.push({ x, row });
+    return {
+      key: badge.key,
+      x,
+      y: baseY + row * rowHeight,
+      text: badge.text,
+      color: badge.color,
+      pill: badge.pill,
+      dx: 0,
+    };
+  });
 }
 
 export interface BottomBadgeInput {
