@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  calculateCoilMetrics,
   calculateCoilScore,
   calculatePriceChangePct,
   isNearResistance,
@@ -36,6 +37,25 @@ describe("calculateCoilScore", () => {
     const score = calculateCoilScore(noisy);
     expect(score).toBeGreaterThanOrEqual(0);
     expect(score).toBeLessThanOrEqual(100);
+  });
+});
+
+describe("calculateCoilMetrics", () => {
+  it("exposes a small band-width percentage for tight recent price action", () => {
+    const tight = Array.from({ length: 30 }, () => bar(100));
+    const metrics = calculateCoilMetrics(tight);
+    expect(metrics.bandWidthPct).toBe(0);
+    expect(metrics.score).toBe(50);
+  });
+
+  it("keeps band width independent of the 30-day return headline", () => {
+    const bars = [
+      ...Array.from({ length: 10 }, () => bar(70)),
+      ...Array.from({ length: 20 }, () => bar(95)),
+    ];
+    expect(calculatePriceChangePct(bars)).toBeCloseTo(35.7, 0);
+    const metrics = calculateCoilMetrics(bars);
+    expect(metrics.bandWidthPct).toBe(0);
   });
 });
 

@@ -12,6 +12,7 @@ type SignalInput = Parameters<typeof buildSignals>[0];
 function strongSetup(overrides: Partial<SignalInput> = {}): SignalInput {
   return {
     coilScore: 90,
+    coilBandWidthPct: 4.2,
     darkPoolNotional: 20_000_000,
     darkPoolBaseline: 3_000_000,
     premiumRatio: 0.5,
@@ -54,6 +55,12 @@ describe("buildSignals", () => {
     const signals = buildSignals(strongSetup({ priceChangePct: 8 }));
     expect(byId(signals, "coil").triggered).toBe(false);
     expect(byId(signals, "darkpool").triggered).toBe(false);
+  });
+
+  it("describes coiling with band width, not 30-day price change", () => {
+    const signals = buildSignals(strongSetup({ coilBandWidthPct: 3.8, priceChangePct: 35.7 }));
+    expect(byId(signals, "coil").description).toContain("3.8% band width");
+    expect(byId(signals, "coil").description).not.toContain("35.7%");
   });
 
   it("keeps dark-pool off when notional is below baseline", () => {

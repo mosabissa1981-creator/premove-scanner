@@ -17,7 +17,7 @@ import type {
 import { computeGexLevelsFromUw } from "@/lib/scoring/gex";
 import { derivePhase } from "@/lib/scoring/phases";
 import {
-  calculateCoilScore,
+  calculateCoilMetrics,
   calculatePriceChangePct,
   getResistanceLevel,
   getSwingStop,
@@ -83,6 +83,7 @@ function hasBullishNetFlow(vol: UwOptionsVolume): boolean {
 
 export function buildSignals(input: {
   coilScore: number;
+  coilBandWidthPct: number;
   darkPoolNotional: number;
   darkPoolBaseline: number;
   premiumRatio: number;
@@ -153,7 +154,7 @@ export function buildSignals(input: {
       points: 2,
       triggered: coilTriggered,
       strength: coilStrength,
-      description: `Coil ${input.coilScore}/100, price ${input.priceChangePct.toFixed(1)}% — spring winding`,
+      description: `Coil ${input.coilScore}/100, ${input.coilBandWidthPct.toFixed(1)}% band width — spring winding`,
     },
     {
       id: "darkpool",
@@ -555,7 +556,7 @@ export async function analyzeTicker(
   }
 
   const bars = toPriceBars(ohlcRes.data ?? []);
-  const coilScore = calculateCoilScore(bars);
+  const { score: coilScore, bandWidthPct: coilBandWidthPct } = calculateCoilMetrics(bars);
   const priceChangePct = calculatePriceChangePct(bars);
   const nearResistance = isNearResistance(bars);
   const resistanceLevel = getResistanceLevel(bars);
@@ -583,6 +584,7 @@ export async function analyzeTicker(
 
   const signals = buildSignals({
     coilScore,
+    coilBandWidthPct,
     darkPoolNotional,
     darkPoolBaseline,
     premiumRatio: entry.premiumRatio,
