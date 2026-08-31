@@ -178,8 +178,8 @@ export function simulateRawNetGexProfile(
 }
 
 import {
-  buildProfileAtFlip,
-  buildProfileAtFlipFromIsolated,
+  buildCumsumProfileAtFlip,
+  buildIsolatedRebaseAtFlip,
 } from "@/utils/gamma-math";
 export function gammaFlipFromRawProfile(
   raw: RawSimulatedPoint[],
@@ -220,27 +220,27 @@ export function flipIndexForPrice(raw: RawSimulatedPoint[], gammaFlip: number): 
 }
 
 /**
- * Bidirectional profile from localized per-strike net GEX.
+ * Cumsum profile from localized per-strike net GEX.
  */
 export function buildRebaseAtFlipFromValues(
   spots: number[],
   rawValues: number[],
   gammaFlip: number,
 ): SimulatedProfilePoint[] {
-  return buildProfileAtFlip(spots, rawValues, gammaFlip).map((point) => ({
+  return buildCumsumProfileAtFlip(spots, rawValues, gammaFlip).map((point) => ({
     simulatedSpot: point.x,
     profile: point.profile,
     rawNetGex: point.rawValue,
   }));
 }
 
-/** Isolated BS totals at each simulated spot (rebase-at-flip). */
+/** Isolated BS totals at each simulated spot, rebased at flip. */
 export function buildIsolatedProfileAtFlip(
   spots: number[],
   rawValues: number[],
   gammaFlip: number,
 ): SimulatedProfilePoint[] {
-  return buildProfileAtFlipFromIsolated(spots, rawValues, gammaFlip).map((point) => ({
+  return buildIsolatedRebaseAtFlip(spots, rawValues, gammaFlip).map((point) => ({
     simulatedSpot: point.x,
     profile: point.profile,
     rawNetGex: point.rawValue,
@@ -261,7 +261,7 @@ export function buildRebaseAtFlipProfile(
   );
 }
 
-/** Full OptionCharts profile: raw BS net GEX → cumulative rebase at flip. */
+/** Full OptionCharts profile: isolated BS totals per spot → rebase at flip. */
 export function simulateGammaProfile(
   legs: OptionChainLeg[],
   stockPrice: number,
