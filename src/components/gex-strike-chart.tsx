@@ -25,6 +25,8 @@ import {
   formatChartMoney,
   GEX_CHART_AXIS,
   GEX_CHART_THEME,
+  resolveBottomBadgeLayout,
+  resolveLineLabelLayouts,
 } from "@/lib/gex-study/gex-chart-ui";
 
 const CHART_WIDTH = 720;
@@ -49,37 +51,6 @@ interface LevelLine {
   value: number;
   label: string;
   color: string;
-}
-
-interface BottomLabel {
-  key: string;
-  x: number;
-  text: string;
-  color: string;
-  fontWeight?: string;
-  pill?: boolean;
-}
-
-/** Stagger bottom strike labels when vertical lines are too close on mobile. */
-function staggerBottomLabels(labels: BottomLabel[], minSpacingPx: number): (BottomLabel & { y: number })[] {
-  const sorted = [...labels].sort((a, b) => a.x - b.x);
-  const placed: { x: number; row: number }[] = [];
-  const baseY = CHART_HEIGHT - 14;
-  const rowHeight = 24;
-
-  const withRows = sorted.map((label) => {
-    let row = 0;
-    while (placed.some((p) => p.row === row && Math.abs(p.x - label.x) < minSpacingPx)) {
-      row += 1;
-    }
-    placed.push({ x: label.x, row });
-    return { ...label, y: baseY - row * rowHeight };
-  });
-
-  const byKey = new Map(withRows.map((label) => [label.key, label]));
-  return [...labels]
-    .map((label) => byKey.get(label.key)!)
-    .sort((a, b) => a.x - b.x);
 }
 
 interface TooltipState {
@@ -407,7 +378,13 @@ export function GexStrikeChart({
     xTicks.push(t);
   }
 
-  const bottomLabels = staggerBottomLabels(
+  const levelLabelLayouts = resolveLineLabelLayouts(
+    levels.map((level) => ({ key: level.label, x: xForStrike(level.value) })),
+    { labelFontSize: LABEL_FONT },
+  );
+  const levelLabelByKey = new Map(levelLabelLayouts.map((layout) => [layout.key, layout]));
+
+  const bottomLabels = resolveBottomBadgeLayout(
     [
       ...levels.map((level) => ({
         key: level.label,
@@ -427,7 +404,8 @@ export function GexStrikeChart({
           ]
         : []),
     ],
-    52,
+    CHART_HEIGHT - 14,
+    { minSpacingPx: 52, rowHeight: 24 },
   );
 
   return (
@@ -580,6 +558,9 @@ export function GexStrikeChart({
 
           {levels.map((level) => {
             const x = xForStrike(level.value);
+            const layout = levelLabelByKey.get(level.label);
+            const labelX = x + (layout?.dx ?? 0);
+            const labelY = PAD.top - 10;
             return (
               <g key={`${level.label}-${level.value}`}>
                 <line
@@ -592,12 +573,13 @@ export function GexStrikeChart({
                   strokeDasharray="5 4"
                 />
                 <text
-                  x={x}
-                  y={PAD.top - 12}
+                  x={labelX}
+                  y={labelY}
                   textAnchor="middle"
                   fill={GEX_CHART_THEME.levelLabelColor}
                   fontSize={LABEL_FONT}
                   fontWeight="700"
+                  transform={`rotate(${layout?.rotate ?? -90} ${labelX} ${labelY})`}
                 >
                   {level.label}
                 </text>
