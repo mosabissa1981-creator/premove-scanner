@@ -1,11 +1,75 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildChainSimulatedGammaProfile,
   buildCumsumProfileAtFlip,
   buildIsolatedRebaseAtFlip,
+  buildLocalizedBarProfileAtFlip,
   buildProfileAtFlip,
   buildProfileAtFlipFromIsolated,
+  gammaFlipFromRawProfile,
+  interpolateSeriesAtX,
   rebaseProfileAtFlip,
+  simulateRawNetGexProfile,
+  type OptionChainLeg,
 } from "@/utils/gamma-math";
+
+describe("buildChainSimulatedGammaProfile", () => {
+  const CHAIN: OptionChainLeg[] = [
+    { strike: 250, type: "P", oi: 75_000, iv: 0.25, expiry: "2026-09-29", dte: 30 },
+    { strike: 260, type: "C", oi: 35_000, iv: 0.25, expiry: "2026-09-29", dte: 30 },
+    { strike: 275, type: "C", oi: 90_000, iv: 0.25, expiry: "2026-09-29", dte: 30 },
+  ];
+
+  it("builds ticker-agnostic isolated BS profile rebased at flip", () => {
+    const stockPrice = 266;
+    const raw = simulateRawNetGexProfile(CHAIN, stockPrice, { steps: 80, asOfDate: "2026-08-30" });
+    const flip = gammaFlipFromRawProfile(raw, stockPrice)!;
+    const profile = buildChainSimulatedGammaProfile(CHAIN, stockPrice, flip, {
+      steps: 80,
+      asOfDate: "2026-08-30",
+    });
+
+    expect(profile.length).toBeGreaterThan(10);
+    const xs = profile.map((point) => point.simulatedSpot);
+    const values = profile.map((point) => point.profile);
+    expect(interpolateSeriesAtX(xs, values, flip)).toBeCloseTo(0, 0);
+  });
+
+  it("never applies cumsum to BS simulation totals", () => {
+    const stockPrice = 266;
+    const flip = 260;
+    const profile = buildChainSimulatedGammaProfile(CHAIN, stockPrice, flip, {
+      steps: 5,
+      asOfDate: "2026-08-30",
+    });
+    const raw = simulateRawNetGexProfile(CHAIN, stockPrice, { steps: 5, asOfDate: "2026-08-30" });
+
+    let running = 0;
+    const cumsumProfile = buildLocalizedBarProfileAtFlip(
+      raw.map((point) => point.simulatedSpot),
+      raw.map((point) => point.rawNetGex),
+      flip,
+    );
+
+    expect(profile[profile.length - 1]?.profile).not.toBeCloseTo(
+      cumsumProfile[cumsumProfile.length - 1]?.profile ?? 0,
+      -3,
+    );
+  });
+});
+
+describe("buildLocalizedBarProfileAtFlip", () => {
+  it("delegates to cumsum for bar-localized GEX only", () => {
+    const xs = [330, 340, 350, 360];
+    const localized = [-100, -50, 200, 100];
+    const bar = buildLocalizedBarProfileAtFlip(xs, localized, 345);
+    const cumsum = buildCumsumProfileAtFlip(xs, localized, 345);
+    for (const point of bar) {
+      const match = cumsum.find((row) => row.x === point.x);
+      expect(point.profile).toBeCloseTo(match?.profile ?? 0, 6);
+    }
+  });
+});
 
 describe("buildCumsumProfileAtFlip", () => {
   it("anchors localized bar cumsum at zero on the gamma flip price", () => {

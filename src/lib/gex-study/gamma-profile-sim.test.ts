@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { OptionChainLeg } from "@/lib/gex-study/gamma-profile-sim";
+import type { OptionChainLeg } from "@/utils/gamma-math";
+import {
+  buildChainSimulatedGammaProfile,
+  buildSimulatedProfileFromRawTotals,
+} from "@/utils/gamma-math";
 import {
   blackScholesGamma,
   buildRebaseAtFlipProfile,
@@ -13,7 +17,6 @@ import {
   totalGammaAtSpot,
 } from "@/lib/gex-study/gamma-profile-sim";
 
-/** AMZN-style toy chain from the Google Black-Scholes gamma profile example. */
 const GOOGLE_EXAMPLE_CHAIN: OptionChainLeg[] = [
   { strike: 180, type: "P", oi: 12_000, iv: 0.25, expiry: "2026-09-29", dte: 30 },
   { strike: 200, type: "P", oi: 25_000, iv: 0.25, expiry: "2026-09-29", dte: 30 },
@@ -47,7 +50,7 @@ describe("simulateRawNetGexProfile", () => {
   });
 });
 
-describe("buildRebaseAtFlipProfile", () => {
+describe("buildChainSimulatedGammaProfile", () => {
   it("anchors profile at zero on the gamma flip price", () => {
     const stockPrice = 266;
     const raw = simulateRawNetGexProfile(GOOGLE_EXAMPLE_CHAIN, stockPrice, {
@@ -55,7 +58,10 @@ describe("buildRebaseAtFlipProfile", () => {
       asOfDate: "2026-08-30",
     });
     const flip = gammaFlipFromRawProfile(raw, stockPrice)!;
-    const profile = buildRebaseAtFlipProfile(raw, flip);
+    const profile = buildChainSimulatedGammaProfile(GOOGLE_EXAMPLE_CHAIN, stockPrice, flip, {
+      steps: 200,
+      asOfDate: "2026-08-30",
+    });
 
     expect(interpolateSimulatedProfile(profile, flip)).toBeCloseTo(0, 0);
 
@@ -64,7 +70,9 @@ describe("buildRebaseAtFlipProfile", () => {
     expect(below!).toBeLessThan(0);
     expect(above!).toBeGreaterThan(0);
   });
+});
 
+describe("buildSimulatedProfileFromRawTotals", () => {
   it("does not stack bar-sized dollar values into a billion-dollar cliff", () => {
     const raw = [
       { simulatedSpot: 240, rawNetGex: -20_000_000 },
@@ -73,7 +81,7 @@ describe("buildRebaseAtFlipProfile", () => {
       { simulatedSpot: 265, rawNetGex: 183_000_000 },
       { simulatedSpot: 270, rawNetGex: 103_000_000 },
     ];
-    const profile = buildRebaseAtFlipProfile(raw, 248.42);
+    const profile = buildSimulatedProfileFromRawTotals(raw, 248.42);
     const at265 = interpolateSimulatedProfile(profile, 265)!;
     const at270 = interpolateSimulatedProfile(profile, 270)!;
     expect(at265).toBeCloseTo(183_000_000, -3);

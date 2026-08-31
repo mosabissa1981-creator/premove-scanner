@@ -1,20 +1,54 @@
 /**
- * OptionCharts-style gamma profile math shared across API + chart layers.
+ * Global gamma profile math engine (ticker-agnostic).
  *
- * - Bar/localized GEX: left-to-right cumsum rebased at gamma flip
- * - BS simulation totals: isolated portfolio value at each spot, rebased at flip
+ * - **Bar/localized GEX:** left-to-right cumsum rebased at gamma flip
+ * - **BS simulation:** independent portfolio total at each S_sim, rebased at flip
+ *   (never cumsum on simulated totals)
  */
 
-export interface RebasedProfilePoint {
-  /** X-axis value (strike or simulated spot). */
-  x: number;
-  /** Profile ($ / 1% move), anchored at $0 on gamma flip. */
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface OptionChainLeg {
+  strike: number;
+  type: "C" | "P";
+  oi: number;
+  iv: number;
+  expiry: string;
+  dte: number;
+}
+
+export interface RawSimulatedPoint {
+  simulatedSpot: number;
+  rawNetGex: number;
+}
+
+export interface SimulatedProfilePoint {
+  simulatedSpot: number;
   profile: number;
-  /** Optional raw/localized value before integration (for debugging/tooltips). */
+  rawNetGex?: number;
+}
+
+export interface RebasedProfilePoint {
+  x: number;
+  profile: number;
   rawValue?: number;
 }
 
-/** Linear interpolation of `values` at coordinate `x` along sorted `xs`. */
+export interface GammaProfileSimOptions {
+  riskFreeRate?: number;
+  defaultIv?: number;
+  steps?: number;
+  paddingPct?: number;
+  asOfDate?: string;
+  gammaFlip?: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Interpolation
+// ---------------------------------------------------------------------------
+
 export function interpolateSeriesAtX(xs: number[], values: number[], x: number): number {
   if (!xs.length) return 0;
   if (x <= xs[0]) return values[0] ?? 0;
@@ -34,7 +68,6 @@ export function interpolateSeriesAtX(xs: number[], values: number[], x: number):
   return values[last] ?? 0;
 }
 
-/** Index of the last point at or below `gammaFlip` along sorted `xs`. */
 export function findFlipIndexFromPrice(xs: number[], gammaFlip: number): number {
   let flipIndex = 0;
   for (let i = 0; i < xs.length; i++) {
@@ -43,10 +76,10 @@ export function findFlipIndexFromPrice(xs: number[], gammaFlip: number): number 
   return flipIndex;
 }
 
-/**
- * Left-to-right cumulative sum rebased to $0 at gamma flip.
- * Used for localized per-strike bar GEX (no bidirectional sweep).
- */
+// ---------------------------------------------------------------------------
+// Bar profile (cumsum only — never used for BS simulation)
+// ---------------------------------------------------------------------------
+
 export function buildCumsumProfileAtFlip(
   xs: number[],
   values: number[],
@@ -75,10 +108,28 @@ export function buildCumsumProfileAtFlip(
   }));
 }
 
-/**
- * Independent BS portfolio total at each simulated spot → profile = total - total@flip.
- * Each spot is evaluated in isolation (no step-to-step accumulation).
- */
+/** Localized per-strike bar GEX → cumsum profile at gamma flip. */
+export function buildLocalizedBarProfileAtFlip(
+  strikes: number[],
+  localizedNetGex: number[],
+  gammaFlip: number,
+): RebasedProfilePoint[] {
+  return buildCumsumProfileAtFlip(strikes, localizedNetGex, gammaFlip);
+}
+
+/** @deprecated Use `buildLocalizedBarProfileAtFlip`. */
+export function buildProfileAtFlip(
+  xs: number[],
+  localizedValues: number[],
+  gammaFlip: number,
+): RebasedProfilePoint[] {
+  return buildLocalizedBarProfileAtFlip(xs, localizedValues, gammaFlip);
+}
+
+// ---------------------------------------------------------------------------
+// BS simulation profile (isolated rebase only — never cumsum)
+// ---------------------------------------------------------------------------
+
 export function buildIsolatedRebaseAtFlip(
   xs: number[],
   isolatedTotals: number[],
@@ -101,16 +152,7 @@ export function buildIsolatedRebaseAtFlip(
   }));
 }
 
-/** Localized per-strike net GEX → cumsum profile anchored at gamma flip. */
-export function buildProfileAtFlip(
-  xs: number[],
-  localizedValues: number[],
-  gammaFlip: number,
-): RebasedProfilePoint[] {
-  return buildCumsumProfileAtFlip(xs, localizedValues, gammaFlip);
-}
-
-/** Isolated BS portfolio totals per simulated spot → rebase at flip. */
+/** @deprecated Use `buildIsolatedRebaseAtFlip`. */
 export function buildProfileAtFlipFromIsolated(
   xs: number[],
   isolatedTotals: number[],
@@ -119,7 +161,7 @@ export function buildProfileAtFlipFromIsolated(
   return buildIsolatedRebaseAtFlip(xs, isolatedTotals, gammaFlip);
 }
 
-/** @deprecated Use `buildCumsumProfileAtFlip` or `buildIsolatedRebaseAtFlip`. */
+/** @deprecated Use `buildIsolatedRebaseAtFlip`. */
 export function rebaseProfileAtFlip(
   xs: number[],
   rawValues: number[],
@@ -128,7 +170,6 @@ export function rebaseProfileAtFlip(
   return buildIsolatedRebaseAtFlip(xs, rawValues, gammaFlip);
 }
 
-/** Map profile values back onto strike-keyed rows. */
 export function applyRebasedProfile<T extends { strike: number }>(
   rows: T[],
   rebased: RebasedProfilePoint[],
@@ -138,4 +179,218 @@ export function applyRebasedProfile<T extends { strike: number }>(
     ...row,
     profile: profileByX.get(row.strike) ?? 0,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Black-Scholes simulation primitives
+// ---------------------------------------------------------------------------
+
+const DEFAULT_RISK_FREE_RATE = 0.04;
+const DEFAULT_IV = 0.25;
+const DEFAULT_STEPS = 200;
+const DEFAULT_PADDING_PCT = 0.35;
+const MS_PER_DAY = 86_400_000;
+
+export function normPdf(x: number): number {
+  return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+}
+
+export function blackScholesGamma(
+  spot: number,
+  strike: number,
+  timeYears: number,
+  riskFreeRate: number,
+  iv: number,
+): number {
+  if (timeYears <= 0 || iv <= 0 || spot <= 0 || strike <= 0) return 0;
+  const sqrtT = Math.sqrt(timeYears);
+  const d1 =
+    (Math.log(spot / strike) + (riskFreeRate + 0.5 * iv * iv) * timeYears) / (iv * sqrtT);
+  return normPdf(d1) / (spot * iv * sqrtT);
+}
+
+export function dollarGammaExposure(
+  simulatedSpot: number,
+  strike: number,
+  timeYears: number,
+  riskFreeRate: number,
+  iv: number,
+  oi: number,
+  type: "C" | "P",
+): number {
+  const unitGamma = blackScholesGamma(simulatedSpot, strike, timeYears, riskFreeRate, iv);
+  const direction = type === "C" ? 1 : -1;
+  return unitGamma * oi * 100 * simulatedSpot * simulatedSpot * 0.01 * direction;
+}
+
+export function contractTimeYears(leg: OptionChainLeg, asOfDate: string): number {
+  if (leg.dte > 0) return Math.max(leg.dte / 365, 1 / 365);
+  return yearsToExpiry(leg.expiry, asOfDate);
+}
+
+function yearsToExpiry(expiry: string, asOfDate: string): number {
+  const end = Date.parse(expiry.slice(0, 10));
+  const start = Date.parse(asOfDate.slice(0, 10));
+  if (Number.isNaN(end) || Number.isNaN(start)) return 1 / 365;
+  const days = Math.max(0, (end - start) / MS_PER_DAY);
+  return Math.max(days / 365, 1 / 365);
+}
+
+function simulationRange(
+  stockPrice: number,
+  legs: OptionChainLeg[],
+  paddingPct: number,
+): { min: number; max: number } {
+  let minSpot = stockPrice * (1 - paddingPct);
+  let maxSpot = stockPrice * (1 + paddingPct);
+  for (const leg of legs) {
+    if (leg.oi <= 0) continue;
+    minSpot = Math.min(minSpot, leg.strike);
+    maxSpot = Math.max(maxSpot, leg.strike);
+  }
+  return { min: minSpot, max: maxSpot };
+}
+
+/** Total portfolio GEX ($ / 1% move) if the underlying traded at `simulatedSpot`. */
+export function totalGammaAtSpot(
+  legs: OptionChainLeg[],
+  simulatedSpot: number,
+  options: GammaProfileSimOptions = {},
+): number {
+  const r = options.riskFreeRate ?? DEFAULT_RISK_FREE_RATE;
+  const defaultIv = options.defaultIv ?? DEFAULT_IV;
+  const asOfDate = options.asOfDate ?? new Date().toISOString().slice(0, 10);
+  let totalGex = 0;
+
+  for (const leg of legs) {
+    if (leg.oi <= 0) continue;
+    const iv = leg.iv > 0 ? leg.iv : defaultIv;
+    const timeYears = contractTimeYears(leg, asOfDate);
+    totalGex += dollarGammaExposure(
+      simulatedSpot,
+      leg.strike,
+      timeYears,
+      r,
+      iv,
+      leg.oi,
+      leg.type,
+    );
+  }
+
+  return totalGex;
+}
+
+/**
+ * Independent portfolio total at each simulated spot (no running sum across steps).
+ */
+export function simulateRawNetGexProfile(
+  legs: OptionChainLeg[],
+  stockPrice: number,
+  options: GammaProfileSimOptions = {},
+): RawSimulatedPoint[] {
+  if (!legs.length || stockPrice <= 0) return [];
+
+  const steps = options.steps ?? DEFAULT_STEPS;
+  const paddingPct = options.paddingPct ?? DEFAULT_PADDING_PCT;
+  const { min, max } = simulationRange(stockPrice, legs, paddingPct);
+  const span = max - min;
+  if (span <= 0) return [];
+
+  const asOfDate = options.asOfDate ?? new Date().toISOString().slice(0, 10);
+  const riskFreeRate = options.riskFreeRate ?? DEFAULT_RISK_FREE_RATE;
+  const defaultIv = options.defaultIv ?? DEFAULT_IV;
+
+  const points: RawSimulatedPoint[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const simulatedSpot = min + (span * i) / steps;
+    points.push({
+      simulatedSpot,
+      rawNetGex: totalGammaAtSpot(legs, simulatedSpot, {
+        riskFreeRate,
+        defaultIv,
+        asOfDate,
+      }),
+    });
+  }
+
+  return points;
+}
+
+function toSimulatedProfilePoints(rebased: RebasedProfilePoint[]): SimulatedProfilePoint[] {
+  return rebased.map((point) => ({
+    simulatedSpot: point.x,
+    profile: point.profile,
+    rawNetGex: point.rawValue,
+  }));
+}
+
+/**
+ * Global BS simulation profile for any ticker.
+ *
+ * 1. Evaluate independent portfolio total at each S_sim via Black-Scholes
+ * 2. Rebase isolated totals to $0 at `gammaFlip` (never cumsum)
+ */
+export function buildChainSimulatedGammaProfile(
+  legs: OptionChainLeg[],
+  stockPrice: number,
+  gammaFlip: number,
+  options: GammaProfileSimOptions = {},
+): SimulatedProfilePoint[] {
+  if (!legs.length || stockPrice <= 0 || !Number.isFinite(gammaFlip)) return [];
+
+  const raw = simulateRawNetGexProfile(legs, stockPrice, options);
+  if (!raw.length) return [];
+
+  const rebased = buildIsolatedRebaseAtFlip(
+    raw.map((point) => point.simulatedSpot),
+    raw.map((point) => point.rawNetGex),
+    gammaFlip,
+  );
+
+  return toSimulatedProfilePoints(rebased);
+}
+
+/** Rebase precomputed raw BS totals to $0 at gamma flip (isolated, not cumsum). */
+export function buildSimulatedProfileFromRawTotals(
+  raw: RawSimulatedPoint[],
+  gammaFlip: number,
+): SimulatedProfilePoint[] {
+  const sorted = [...raw].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
+  if (!sorted.length || !Number.isFinite(gammaFlip)) return [];
+
+  const rebased = buildIsolatedRebaseAtFlip(
+    sorted.map((point) => point.simulatedSpot),
+    sorted.map((point) => point.rawNetGex),
+    gammaFlip,
+  );
+
+  return toSimulatedProfilePoints(rebased);
+}
+
+export function gammaFlipFromRawProfile(
+  raw: RawSimulatedPoint[],
+  stockPrice: number,
+): number | null {
+  if (!raw.length || stockPrice <= 0) return null;
+
+  const sorted = [...raw].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
+  const minStrike = stockPrice * 0.45;
+  let deepest: number | null = null;
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const curr = sorted[i];
+    if (curr.simulatedSpot > stockPrice || prev.simulatedSpot < minStrike) continue;
+    if (prev.rawNetGex <= 0 && curr.rawNetGex >= 0) {
+      const span = curr.rawNetGex - prev.rawNetGex;
+      const flip =
+        span === 0
+          ? curr.simulatedSpot
+          : prev.simulatedSpot +
+            (-prev.rawNetGex / span) * (curr.simulatedSpot - prev.simulatedSpot);
+      if (deepest == null || flip < deepest) deepest = flip;
+    }
+  }
+
+  return deepest;
 }
