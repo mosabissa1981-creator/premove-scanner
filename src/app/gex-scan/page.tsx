@@ -5,48 +5,14 @@ import { useCallback, useEffect, useState } from "react";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
 import { TickerSearch } from "@/components/ticker-search";
 import { filterAndSortGexRows, filterByGammaFlip, gexSides, tierClass, type GammaFlipFilter } from "@/lib/gex-scan/gex-scan";
+import { formatMoney, formatPrice, gexRegimeBadge, signedClass } from "@/lib/format";
 import type { GexExpiryMode, GexScanResult, GexScanRow } from "@/lib/unusualwhales/types";
 
 const STORAGE_KEY = "premove_gex_tickers";
 const DEFAULT_TICKERS = "NVDA AAPL TSLA AMD META SPY QQQ IWM MSFT AMZN";
 
-function formatMoney(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(Number(value))) return "—";
-  const n = Number(value);
-  const sign = n < 0 ? "-" : "";
-  const abs = Math.abs(n);
-  if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(2)}M`;
-  if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(1)}K`;
-  return `${sign}$${abs.toFixed(0)}`;
-}
-
-function cls(value: number): string {
-  return value >= 0 ? "text-emerald-400" : "text-red-400";
-}
-
-function formatPrice(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(Number(value))) return "—";
-  return `$${Number(value).toFixed(2)}`;
-}
-
-function flipBadge(row: GexScanRow): { label: string; className: string } {
-  if (row.regime === "positive") {
-    return {
-      label: "Above flip",
-      className: "border-emerald-500/40 bg-emerald-500/15 text-emerald-300",
-    };
-  }
-  if (row.regime === "negative") {
-    return {
-      label: "Below flip",
-      className: "border-red-500/40 bg-red-500/15 text-red-300",
-    };
-  }
-  return {
-    label: "No flip",
-    className: "border-zinc-700 bg-zinc-800 text-zinc-400",
-  };
+function flipBadge(row: GexScanRow) {
+  return gexRegimeBadge(row.regime, { neutralLabel: "No flip" });
 }
 
 function rowBackground(row: GexScanRow): string {
@@ -93,7 +59,7 @@ function GexScanResults({ rows, expiryMode }: { rows: GexScanRow[]; expiryMode: 
                 </div>
                 <div className="shrink-0 text-right">
                   <div className="text-[10px] uppercase tracking-wide text-zinc-500">Net GEX</div>
-                  <div className={`text-sm font-semibold ${cls(row.netGex)}`}>{formatMoney(row.netGex)}</div>
+                  <div className={`text-sm font-semibold ${signedClass(row.netGex)}`}>{formatMoney(row.netGex)}</div>
                 </div>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
@@ -170,11 +136,11 @@ function GexScanResults({ rows, expiryMode }: { rows: GexScanRow[]; expiryMode: 
                         : ""}
                     </div>
                   </td>
-                  <td className={`px-3 py-3 text-right font-semibold ${cls(row.netGex)}`}>
+                  <td className={`px-3 py-3 text-right font-semibold ${signedClass(row.netGex)}`}>
                     {formatMoney(row.netGex)}
                   </td>
-                  <td className={`px-3 py-3 text-right ${cls(row.callGex)}`}>{formatMoney(row.callGex)}</td>
-                  <td className={`px-3 py-3 text-right ${cls(row.putGex)}`}>{formatMoney(row.putGex)}</td>
+                  <td className={`px-3 py-3 text-right ${signedClass(row.callGex)}`}>{formatMoney(row.callGex)}</td>
+                  <td className={`px-3 py-3 text-right ${signedClass(row.putGex)}`}>{formatMoney(row.putGex)}</td>
                   <td className={`px-3 py-3 font-bold ${callHeavy ? "text-emerald-400" : "text-red-400"}`}>
                     {row.ratio}
                   </td>
