@@ -4,8 +4,11 @@ export {
   PROFILE_SCALE_PADDING,
   createBarYScale,
   createProfileYScale,
+  createStrikeXScale,
   profileSeriesPoints,
+  strikeDomainFromValues,
   symmetricDomain,
+  type StrikeXScale,
   type SymmetricDomain,
   type YAxisScale,
 } from "@/utils/chart-domain";

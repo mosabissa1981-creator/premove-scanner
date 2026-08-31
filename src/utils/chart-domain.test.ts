@@ -3,12 +3,34 @@ import {
   BAR_HEIGHT_RATIO,
   createBarYScale,
   createProfileYScale,
+  createStrikeXScale,
   profileSeriesPoints,
+  strikeDomainFromValues,
   symmetricDomain,
 } from "@/utils/chart-domain";
 
 const PLOT_TOP = 44;
 const PLOT_HEIGHT = 282;
+
+describe("createStrikeXScale", () => {
+  it("maps lower strikes left and higher strikes right", () => {
+    const scale = createStrikeXScale(500, 900, 82, 556);
+    expect(scale.toX(756)).toBeLessThan(scale.toX(800));
+    expect(scale.toX(500)).toBeCloseTo(82, 4);
+    expect(scale.toX(900)).toBeCloseTo(638, 4);
+  });
+
+  it("coerces numeric strings through the scale", () => {
+    const scale = createStrikeXScale(500, 900, 0, 400);
+    expect(scale.toX("756" as unknown as number)).toBeLessThan(scale.toX(800));
+  });
+});
+
+describe("strikeDomainFromValues", () => {
+  it("returns ascending min/max regardless of input order", () => {
+    expect(strikeDomainFromValues([800, 505, 756])).toEqual({ domainMin: 505, domainMax: 800 });
+  });
+});
 
 describe("symmetricDomain", () => {
   it("returns [-maxAbs, maxAbs] for asymmetric data", () => {

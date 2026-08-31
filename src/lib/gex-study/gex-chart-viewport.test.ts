@@ -43,4 +43,20 @@ describe("strike viewport helpers", () => {
     expect(visible.every((p) => p.strike >= 60 && p.strike <= 70)).toBe(true);
     expect(nearestStrike(visible, 63)?.strike).toBe(62);
   });
+
+  it("keeps ascending bounds when strike rows are unsorted", () => {
+    const unsorted = [
+      { strike: 800, callGex: 0, putGex: 0, netGex: 0, profile: 0 },
+      { strike: 505, callGex: 0, putGex: 0, netGex: 0, profile: 0 },
+      { strike: 756, callGex: 0, putGex: 0, netGex: 0, profile: 0 },
+    ];
+    const bounds = strikeBounds(unsorted);
+    expect(bounds.min).toBe(505);
+    expect(bounds.max).toBe(800);
+
+    const vp = initialStrikeViewport(unsorted, 770);
+    expect(vp.min).toBeLessThan(vp.max);
+    expect(vp.min).toBeLessThanOrEqual(756);
+    expect(vp.max).toBeGreaterThanOrEqual(800);
+  });
 });

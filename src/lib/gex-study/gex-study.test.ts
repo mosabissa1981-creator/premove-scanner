@@ -4,6 +4,7 @@ import {
   buildFlipAnchoredProfile,
   buildFlipSeries,
   buildProfileSourceSeries,
+  buildSimulatedChartStrikes,
   buildStrikeSeries,
   computeGammaFlip,
   computeGammaFlipDeep,
@@ -23,6 +24,7 @@ import {
   resolveTradingDate,
   summarizeStrikeSeries,
 } from "@/lib/gex-study/gex-study";
+import type { OptionChainLeg } from "@/lib/gex-study/gamma-profile-sim";
 import type { UwSpotExposureStrikeRow } from "@/lib/unusualwhales/types";
 
 const rows: UwSpotExposureStrikeRow[] = [
@@ -600,5 +602,63 @@ describe("summarizeStrikeSeries", () => {
     expect(totals.netGex).toBe(totals.callGex + totals.putGex);
     expect(totals.callGex).toBeGreaterThan(0);
     expect(totals.putGex).toBeLessThan(0);
+  });
+});
+
+const SPY_LIKE_CHAIN: OptionChainLeg[] = [
+  { strike: 740, type: "P", oi: 20_000, iv: 0.14, expiry: "2026-09-19", dte: 21 },
+  { strike: 750, type: "P", oi: 45_000, iv: 0.14, expiry: "2026-09-19", dte: 21 },
+  { strike: 755, type: "P", oi: 70_000, iv: 0.14, expiry: "2026-09-19", dte: 21 },
+  { strike: 760, type: "P", oi: 120_000, iv: 0.14, expiry: "2026-09-19", dte: 21 },
+  { strike: 765, type: "P", oi: 90_000, iv: 0.14, expiry: "2026-09-19", dte: 21 },
+  { strike: 770, type: "P", oi: 60_000, iv: 0.14, expiry: "2026-09-19", dte: 21 },
+  { strike: 775, type: "C", oi: 50_000, iv: 0.14, expiry: "2026-09-19", dte: 21 },
+  { strike: 785, type: "C", oi: 80_000, iv: 0.14, expiry: "2026-09-19", dte: 21 },
+  { strike: 800, type: "C", oi: 100_000, iv: 0.14, expiry: "2026-09-19", dte: 21 },
+  { strike: 820, type: "C", oi: 60_000, iv: 0.14, expiry: "2026-09-19", dte: 21 },
+];
+
+describe("buildSimulatedChartStrikes", () => {
+  it("uses BS rebase so profile minimum sits at gamma flip, not put wall", () => {
+    const stockPrice = 769;
+    const gammaFlip = 772;
+    const putWall = 756;
+    const rows: UwSpotExposureStrikeRow[] = [
+      { strike: "700", call_gamma_oi: "0", put_gamma_oi: "-10000" },
+      { strike: "720", call_gamma_oi: "0", put_gamma_oi: "-15000" },
+      { strike: "740", call_gamma_oi: "0", put_gamma_oi: "-20000" },
+      { strike: "750", call_gamma_oi: "0", put_gamma_oi: "-30000" },
+      { strike: "755", call_gamma_oi: "0", put_gamma_oi: "-40000" },
+      { strike: "760", call_gamma_oi: "0", put_gamma_oi: "-80000" },
+      { strike: "765", call_gamma_oi: "0", put_gamma_oi: "-50000" },
+      { strike: "770", call_gamma_oi: "0", put_gamma_oi: "-20000" },
+      { strike: "775", call_gamma_oi: "50000", put_gamma_oi: "0" },
+      { strike: "800", call_gamma_oi: "100000", put_gamma_oi: "0" },
+      { strike: "820", call_gamma_oi: "60000", put_gamma_oi: "0" },
+    ];
+    const bars = buildStrikeSeries(rows, stockPrice);
+    const profileSource = buildProfileSourceSeries(rows);
+
+    const { strikes, usedSimulation } = buildSimulatedChartStrikes(
+      bars,
+      SPY_LIKE_CHAIN,
+      stockPrice,
+      "2026-08-30",
+      gammaFlip,
+      profileSource,
+    );
+
+    expect(usedSimulation).toBe(true);
+    const profileAt = (strike: number) => interpolateProfileAtStrike(strikes, strike)!;
+
+    expect(profileAt(gammaFlip)).toBeCloseTo(0, 0);
+
+    const atTrough = profileAt(750);
+    const atPutWall = profileAt(putWall);
+    const atFlip = profileAt(gammaFlip);
+
+    expect(atTrough).toBeLessThan(atPutWall);
+    expect(atPutWall).toBeLessThan(atFlip);
+    expect(atFlip).toBeCloseTo(0, 0);
   });
 });

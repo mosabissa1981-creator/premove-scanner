@@ -8,9 +8,15 @@ export interface StrikeViewport {
 const MIN_SPAN_RATIO = 0.08;
 const MAX_ZOOM_STEPS = 12;
 
+/** Always sort by numeric strike so viewport bounds stay ascending. */
+export function sortStrikesByPrice(points: GexStrikePoint[]): GexStrikePoint[] {
+  return [...points].sort((a, b) => Number(a.strike) - Number(b.strike));
+}
+
 export function strikeBounds(points: GexStrikePoint[]): StrikeViewport {
   if (!points.length) return { min: 0, max: 1 };
-  return { min: points[0].strike, max: points[points.length - 1].strike };
+  const sorted = sortStrikesByPrice(points);
+  return { min: sorted[0].strike, max: sorted[sorted.length - 1].strike };
 }
 
 export function initialStrikeViewport(
@@ -18,41 +24,44 @@ export function initialStrikeViewport(
   stockPrice: number | null,
   paddingPct = 0.35,
 ): StrikeViewport {
-  const bounds = strikeBounds(points);
-  if (!points.length) return bounds;
+  const sorted = sortStrikesByPrice(points);
+  const bounds = strikeBounds(sorted);
+  if (!sorted.length) return bounds;
   if (stockPrice == null || stockPrice <= 0) return bounds;
 
   let min = stockPrice * (1 - paddingPct);
   let max = stockPrice * (1 + paddingPct);
-  const filtered = points.filter((p) => p.strike >= min && p.strike <= max);
+  const filtered = sorted.filter((p) => p.strike >= min && p.strike <= max);
   if (filtered.length >= 8) {
     return clampStrikeViewport({ min, max }, bounds);
   }
 
-  const centerIdx = points.reduce(
+  const centerIdx = sorted.reduce(
     (best, p, i) =>
-      Math.abs(p.strike - stockPrice) < Math.abs(points[best].strike - stockPrice) ? i : best,
+      Math.abs(p.strike - stockPrice) < Math.abs(sorted[best].strike - stockPrice) ? i : best,
     0,
   );
   const half = 20;
   const start = Math.max(0, centerIdx - half);
-  const end = Math.min(points.length, centerIdx + half + 1);
-  return { min: points[start].strike, max: points[end - 1].strike };
+  const end = Math.min(sorted.length, centerIdx + half + 1);
+  return { min: sorted[start].strike, max: sorted[end - 1].strike };
 }
 
 export function clampStrikeViewport(vp: StrikeViewport, bounds: StrikeViewport): StrikeViewport {
-  const fullSpan = bounds.max - bounds.min || 1;
+  const domainMin = Math.min(bounds.min, bounds.max);
+  const domainMax = Math.max(bounds.min, bounds.max);
+  const fullSpan = domainMax - domainMin || 1;
   const minSpan = fullSpan * MIN_SPAN_RATIO;
   let span = Math.max(minSpan, Math.min(fullSpan, vp.max - vp.min));
-  let min = vp.min;
+  let min = Math.min(vp.min, vp.max);
   let max = min + span;
 
-  if (min < bounds.min) {
-    min = bounds.min;
+  if (min < domainMin) {
+    min = domainMin;
     max = min + span;
   }
-  if (max > bounds.max) {
-    max = bounds.max;
+  if (max > domainMax) {
+    max = domainMax;
     min = max - span;
   }
 
@@ -66,7 +75,9 @@ export function zoomStrikeViewport(
   bounds: StrikeViewport,
 ): StrikeViewport {
   const span = vp.max - vp.min || 1;
-  const fullSpan = bounds.max - bounds.min || 1;
+  const domainMin = Math.min(bounds.min, bounds.max);
+  const domainMax = Math.max(bounds.min, bounds.max);
+  const fullSpan = domainMax - domainMin || 1;
   const minSpan = fullSpan * MIN_SPAN_RATIO;
   const newSpan = Math.max(minSpan, Math.min(fullSpan, span / scale));
   const ratio = (focalStrike - vp.min) / span;
@@ -83,19 +94,23 @@ export function panStrikeViewport(
   const span = vp.max - vp.min;
   let min = vp.min + deltaStrike;
   let max = vp.max + deltaStrike;
-  if (min < bounds.min) {
-    min = bounds.min;
+  const domainMin = Math.min(bounds.min, bounds.max);
+  const domainMax = Math.max(bounds.min, bounds.max);
+  if (min < domainMin) {
+    min = domainMin;
     max = min + span;
   }
-  if (max > bounds.max) {
-    max = bounds.max;
+  if (max > domainMax) {
+    max = domainMax;
     min = max - span;
   }
   return { min, max };
 }
 
 export function strikesInViewport(points: GexStrikePoint[], vp: StrikeViewport): GexStrikePoint[] {
-  return points.filter((p) => p.strike >= vp.min && p.strike <= vp.max);
+  const min = Math.min(vp.min, vp.max);
+  const max = Math.max(vp.min, vp.max);
+  return sortStrikesByPrice(points).filter((p) => p.strike >= min && p.strike <= max);
 }
 
 export function clientXToStrike(
@@ -104,7 +119,9 @@ export function clientXToStrike(
   vp: StrikeViewport,
 ): number {
   const rel = (clientX - rect.left) / rect.width;
-  return vp.min + rel * (vp.max - vp.min);
+  const min = Math.min(vp.min, vp.max);
+  const max = Math.max(vp.min, vp.max);
+  return min + rel * (max - min);
 }
 
 export function nearestStrike(
@@ -125,13 +142,17 @@ export function nearestStrike(
 }
 
 export function isViewportZoomed(vp: StrikeViewport, bounds: StrikeViewport): boolean {
-  const fullSpan = bounds.max - bounds.min || 1;
-  const span = vp.max - vp.min;
+  const domainMin = Math.min(bounds.min, bounds.max);
+  const domainMax = Math.max(bounds.min, bounds.max);
+  const fullSpan = domainMax - domainMin || 1;
+  const span = Math.abs(vp.max - vp.min);
   return span < fullSpan * 0.98;
 }
 
 export function maxZoomScale(bounds: StrikeViewport): number {
-  const fullSpan = bounds.max - bounds.min || 1;
+  const domainMin = Math.min(bounds.min, bounds.max);
+  const domainMax = Math.max(bounds.min, bounds.max);
+  const fullSpan = domainMax - domainMin || 1;
   const minSpan = fullSpan * MIN_SPAN_RATIO;
   return Math.max(1, fullSpan / minSpan);
 }

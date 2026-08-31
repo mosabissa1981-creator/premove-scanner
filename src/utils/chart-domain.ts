@@ -17,6 +17,38 @@ export interface YAxisScale extends SymmetricDomain {
   ticks: number[];
 }
 
+export interface StrikeXScale {
+  domainMin: number;
+  domainMax: number;
+  toX: (strike: number) => number;
+}
+
+/** Numeric strike domain from data (always ascending). */
+export function strikeDomainFromValues(strikes: number[]): { domainMin: number; domainMax: number } {
+  if (!strikes.length) return { domainMin: 0, domainMax: 1 };
+  const numeric = strikes.map((strike) => Number(strike)).filter((strike) => Number.isFinite(strike));
+  if (!numeric.length) return { domainMin: 0, domainMax: 1 };
+  return { domainMin: Math.min(...numeric), domainMax: Math.max(...numeric) };
+}
+
+/** Numeric X-axis scale: maps raw strike prices left→right across the plot width. */
+export function createStrikeXScale(
+  domainMin: number,
+  domainMax: number,
+  plotLeft: number,
+  plotWidth: number,
+): StrikeXScale {
+  const min = Number(domainMin);
+  const max = Number(domainMax);
+  const span = max - min || 1;
+
+  return {
+    domainMin: min,
+    domainMax: max,
+    toX: (strike: number) => plotLeft + ((Number(strike) - min) / span) * plotWidth,
+  };
+}
+
 /** Perfectly symmetrical domain: [-maxAbs, +maxAbs] with optional padding. */
 export function symmetricDomain(
   values: number[],
