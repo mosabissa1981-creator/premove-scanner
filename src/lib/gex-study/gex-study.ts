@@ -8,7 +8,9 @@ import {
   buildChainSimulatedGammaProfile,
   buildLocalizedBarProfileAtFlip,
   computeGexWallsFromSeries,
+  filterLegsByMaxDte,
   gammaFlipFromRawProfile,
+  MAX_GEX_PROFILE_DTE,
   simulateRawNetGexProfile,
 } from "@/utils/gamma-math";
 import {
@@ -1006,7 +1008,9 @@ async function fetchOptionContractsPaginated(
   expiryFilter: string | undefined,
   dteByExpiry: Map<string, number>,
 ): Promise<OptionChainLeg[]> {
+  // Prefer front/intermediate expiries (≤120 DTE); drop LEAPs from "all" aggregation.
   const expiries = [...dteByExpiry.entries()]
+    .filter(([, dte]) => dte <= MAX_GEX_PROFILE_DTE)
     .sort(([, aDte], [, bDte]) => aDte - bDte)
     .map(([expiry]) => expiry)
     .filter(Boolean);
@@ -1067,8 +1071,13 @@ async function fetchOptionChainLegs(
   expiryFilter: string | undefined,
   expiryRows: UwGreekExposureExpiryRow[],
 ): Promise<OptionChainLeg[]> {
+  const singleExpiry = Boolean(expiryFilter && expiryFilter !== "all");
+  const scopedRows = singleExpiry
+    ? expiryRows
+    : expiryRows.filter((row) => row.dte <= MAX_GEX_PROFILE_DTE);
+
   const dteByExpiry = new Map(
-    expiryRows.map((row) => [expiryKey(row), row.dte] as const).filter(([key]) => Boolean(key)),
+    scopedRows.map((row) => [expiryKey(row), row.dte] as const).filter(([key]) => Boolean(key)),
   );
 
   const contractLegs = await fetchOptionContractsPaginated(
@@ -1078,7 +1087,10 @@ async function fetchOptionChainLegs(
     expiryFilter,
     dteByExpiry,
   );
-  if (contractLegs.length >= TARGET_CHAIN_LEGS) return contractLegs;
+  const scopedContracts = singleExpiry
+    ? contractLegs
+    : filterLegsByMaxDte(contractLegs, MAX_GEX_PROFILE_DTE, tradingDate);
+  if (scopedContracts.length >= TARGET_CHAIN_LEGS) return scopedContracts;
 
   try {
     const res = (await client.optionChains(ticker, {
@@ -1086,15 +1098,18 @@ async function fetchOptionChainLegs(
       greeks: true,
     })) as UwDataResponse<(UwOptionChainRow | string)[]>;
     const chainLegs = parseOptionChainLegs(res.data ?? [], expiryFilter, dteByExpiry);
-    const merged = dedupeChainLegs([...contractLegs, ...chainLegs]);
-    const withOi = merged.filter((leg) => leg.oi > 0);
+    const merged = dedupeChainLegs([...scopedContracts, ...chainLegs]);
+    const scoped = singleExpiry
+      ? merged
+      : filterLegsByMaxDte(merged, MAX_GEX_PROFILE_DTE, tradingDate);
+    const withOi = scoped.filter((leg) => leg.oi > 0);
     if (withOi.length >= MIN_CHAIN_LEGS) return withOi;
-    if (merged.length >= MIN_CHAIN_LEGS) return merged;
+    if (scoped.length >= MIN_CHAIN_LEGS) return scoped;
   } catch {
     // fall through to contract legs
   }
 
-  return contractLegs;
+  return scopedContracts;
 }
 
 function buildBarRebasedProfile(
@@ -1172,9 +1187,11 @@ export async function fetchGexStudy(
   ]);
   const mergedOiLevels = mergeGexLevels(levelsOiRes?.data, levelsOiFallback?.data);
   const mergedVolLevels = mergeGexLevels(levelsVolRes?.data, levelsVolFallback?.data);
-  const expiries = (exposureRes.data ?? [])
-    .map((row) => expiryKey(row))
-    .filter(Boolean);
+  const expiryRowsAll = exposureRes.data ?? [];
+  const expiryRowsForMath = useAll
+    ? expiryRowsAll.filter((row) => row.dte <= MAX_GEX_PROFILE_DTE)
+    : expiryRowsAll;
+  const expiries = expiryRowsForMath.map((row) => expiryKey(row)).filter(Boolean);
 
   let spotTotalsData = spotTotalsRes?.data;
   if (useAll) {
@@ -1201,13 +1218,13 @@ export async function fetchGexStudy(
     }
   }
 
-  const expiryRows = exposureRes.data ?? [];
+  const expiryRows = expiryRowsAll;
   const chainLegs = await fetchOptionChainLegs(
     client,
     ticker,
     tradingDate,
     useAll ? undefined : expiry,
-    expiryRows,
+    expiryRowsForMath,
   );
   const availableExpiries = expiryRows
     .map((row) => ({ expiry: expiryKey(row), dte: row.dte }))

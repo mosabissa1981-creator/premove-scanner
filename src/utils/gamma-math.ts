@@ -43,6 +43,8 @@ export interface GammaProfileSimOptions {
   paddingPct?: number;
   asOfDate?: string;
   gammaFlip?: number | null;
+  /** Max DTE included in BS profile/flip math (default 120). Pass `null` to disable. */
+  maxDte?: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -185,11 +187,18 @@ export function applyRebasedProfile<T extends { strike: number }>(
 // Black-Scholes simulation primitives
 // ---------------------------------------------------------------------------
 
-const DEFAULT_RISK_FREE_RATE = 0.04;
+const DEFAULT_RISK_FREE_RATE = 0.05;
 const DEFAULT_IV = 0.25;
 const DEFAULT_STEPS = 200;
 const DEFAULT_PADDING_PCT = 0.35;
+/** Exclude LEAPs / ultra-long expiries from short-term gamma profile + flip math. */
+export const MAX_GEX_PROFILE_DTE = 120;
 const MS_PER_DAY = 86_400_000;
+
+/** Default risk-free rate used in Black-Scholes gamma (aligned to ~5% Treasury). */
+export function defaultRiskFreeRate(): number {
+  return DEFAULT_RISK_FREE_RATE;
+}
 
 export function normPdf(x: number): number {
   return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
@@ -226,6 +235,30 @@ export function dollarGammaExposure(
 export function contractTimeYears(leg: OptionChainLeg, asOfDate: string): number {
   if (leg.dte > 0) return Math.max(leg.dte / 365, 1 / 365);
   return yearsToExpiry(leg.expiry, asOfDate);
+}
+
+/** Resolve calendar DTE for a leg (prefers explicit dte, else expiry − asOfDate). */
+export function resolveLegDte(leg: OptionChainLeg, asOfDate: string): number {
+  if (leg.dte > 0) return leg.dte;
+  const end = Date.parse(leg.expiry.slice(0, 10));
+  const start = Date.parse(asOfDate.slice(0, 10));
+  if (Number.isNaN(end) || Number.isNaN(start)) return 0;
+  return Math.max(0, Math.round((end - start) / MS_PER_DAY));
+}
+
+/**
+ * Drop ultra-long-dated legs (LEAPs) from profile / flip math.
+ * If filtering would remove every leg (e.g. a single LEAP expiry study), keep the original set.
+ */
+export function filterLegsByMaxDte(
+  legs: OptionChainLeg[],
+  maxDte: number = MAX_GEX_PROFILE_DTE,
+  asOfDate?: string,
+): OptionChainLeg[] {
+  if (!legs.length || !Number.isFinite(maxDte) || maxDte <= 0) return legs;
+  const asOf = asOfDate ?? new Date().toISOString().slice(0, 10);
+  const filtered = legs.filter((leg) => resolveLegDte(leg, asOf) <= maxDte);
+  return filtered.length ? filtered : legs;
 }
 
 function yearsToExpiry(expiry: string, asOfDate: string): number {
@@ -290,13 +323,18 @@ export function simulateRawNetGexProfile(
 ): RawSimulatedPoint[] {
   if (!legs.length || stockPrice <= 0) return [];
 
+  const asOfDate = options.asOfDate ?? new Date().toISOString().slice(0, 10);
+  const maxDte = options.maxDte === null ? null : (options.maxDte ?? MAX_GEX_PROFILE_DTE);
+  const profileLegs =
+    maxDte == null ? legs : filterLegsByMaxDte(legs, maxDte, asOfDate);
+  if (!profileLegs.length) return [];
+
   const steps = options.steps ?? DEFAULT_STEPS;
   const paddingPct = options.paddingPct ?? DEFAULT_PADDING_PCT;
-  const { min, max } = simulationRange(stockPrice, legs, paddingPct);
+  const { min, max } = simulationRange(stockPrice, profileLegs, paddingPct);
   const span = max - min;
   if (span <= 0) return [];
 
-  const asOfDate = options.asOfDate ?? new Date().toISOString().slice(0, 10);
   const riskFreeRate = options.riskFreeRate ?? DEFAULT_RISK_FREE_RATE;
   const defaultIv = options.defaultIv ?? DEFAULT_IV;
 
@@ -305,7 +343,7 @@ export function simulateRawNetGexProfile(
     const simulatedSpot = min + (span * i) / steps;
     points.push({
       simulatedSpot,
-      rawNetGex: totalGammaAtSpot(legs, simulatedSpot, {
+      rawNetGex: totalGammaAtSpot(profileLegs, simulatedSpot, {
         riskFreeRate,
         defaultIv,
         asOfDate,
