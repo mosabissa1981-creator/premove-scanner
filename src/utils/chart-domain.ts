@@ -3,6 +3,8 @@
  * Symmetric profile domain keeps $0 vertically aligned with the bar axis center.
  */
 
+import type { GexStrikePoint } from "@/lib/unusualwhales/types";
+
 export const BAR_HEIGHT_RATIO = 0.32;
 export const PROFILE_SCALE_PADDING = 0.12;
 
@@ -141,4 +143,112 @@ export function profileSeriesPoints<T extends { strike: number; profile: number 
     }
   }
   return [...byStrike.values()].sort((a, b) => a.strike - b.strike);
+}
+
+const STRIKE_MERGE_EPS = 1e-4;
+
+function strikeMergeKey(strike: number): string {
+  const rounded = Math.round(Number(strike) / STRIKE_MERGE_EPS) * STRIKE_MERGE_EPS;
+  return rounded.toFixed(4);
+}
+
+export interface UnifiedChartPoint {
+  strike: number;
+  gammaProfile: number | null;
+  netGex: number | null;
+  callGex: number | null;
+  putGex: number | null;
+}
+
+export interface ProfileCurvePoint {
+  strike: number;
+  profile: number;
+}
+
+/**
+ * Merge dense simulated profile steps with sparse bar strikes onto one linear
+ * strike axis so bars, profile curve, and reference lines share coordinates.
+ */
+export function buildUnifiedChartData(
+  profileCurve: ProfileCurvePoint[],
+  barStrikes: Array<Pick<GexStrikePoint, "strike" | "netGex" | "callGex" | "putGex">>,
+): UnifiedChartPoint[] {
+  const byKey = new Map<string, UnifiedChartPoint>();
+
+  for (const point of profileCurve) {
+    const strike = Number(point.strike);
+    if (!Number.isFinite(strike)) continue;
+    byKey.set(strikeMergeKey(strike), {
+      strike,
+      gammaProfile: point.profile,
+      netGex: null,
+      callGex: null,
+      putGex: null,
+    });
+  }
+
+  for (const bar of barStrikes) {
+    const strike = Number(bar.strike);
+    if (!Number.isFinite(strike)) continue;
+    const key = strikeMergeKey(strike);
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.netGex = bar.netGex;
+      existing.callGex = bar.callGex;
+      existing.putGex = bar.putGex;
+      continue;
+    }
+    byKey.set(key, {
+      strike,
+      gammaProfile: null,
+      netGex: bar.netGex,
+      callGex: bar.callGex,
+      putGex: bar.putGex,
+    });
+  }
+
+  return [...byKey.values()].sort((a, b) => a.strike - b.strike);
+}
+
+/** Split merged strike rows into profile steps vs real bar strikes. */
+export function splitStrikeSeriesForChart(strikes: GexStrikePoint[]): {
+  profileCurve: ProfileCurvePoint[];
+  barStrikes: GexStrikePoint[];
+} {
+  const barStrikes = strikes.filter(
+    (point) => point.netGex !== 0 || point.callGex !== 0 || point.putGex !== 0,
+  );
+  const profileCurve = strikes.map((point) => ({
+    strike: point.strike,
+    profile: point.profile,
+  }));
+  return { profileCurve, barStrikes };
+}
+
+export function unifiedChartToGexPoint(point: UnifiedChartPoint): GexStrikePoint {
+  return {
+    strike: point.strike,
+    netGex: point.netGex ?? 0,
+    callGex: point.callGex ?? 0,
+    putGex: point.putGex ?? 0,
+    profile: point.gammaProfile ?? 0,
+  };
+}
+
+export function profileSeriesFromUnified(
+  points: UnifiedChartPoint[],
+): Array<{ strike: number; profile: number }> {
+  return profileSeriesPoints(
+    points
+      .filter((point) => point.gammaProfile !== null)
+      .map((point) => ({ strike: point.strike, profile: point.gammaProfile as number })),
+  );
+}
+
+export function barSeriesFromUnified(points: UnifiedChartPoint[]): UnifiedChartPoint[] {
+  return points.filter(
+    (point) =>
+      point.netGex !== null &&
+      (point.netGex !== 0 || point.callGex !== 0 || point.putGex !== 0),
+  );
 }

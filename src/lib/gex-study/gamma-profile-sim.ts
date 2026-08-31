@@ -163,11 +163,14 @@ export function mergeSimulatedProfileOntoBars(
   }
 
   const sortedProfile = [...profile].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
-  const barByStrike = new Map(bars.map((bar) => [bar.strike, bar]));
+  const barByStrike = new Map(
+    bars.map((bar) => [Number(bar.strike).toFixed(4), bar]),
+  );
 
   const merged: typeof bars = [];
   for (const point of sortedProfile) {
-    const bar = barByStrike.get(point.simulatedSpot);
+    const strikeKey = Number(point.simulatedSpot).toFixed(4);
+    const bar = barByStrike.get(strikeKey);
     if (bar) {
       merged.push({ ...bar, profile: point.profile });
       continue;
@@ -182,7 +185,8 @@ export function mergeSimulatedProfileOntoBars(
   }
 
   for (const bar of bars) {
-    if (!merged.some((point) => Math.abs(point.strike - bar.strike) < 1e-6)) {
+    const strikeKey = Number(bar.strike).toFixed(4);
+    if (!merged.some((point) => Number(point.strike).toFixed(4) === strikeKey)) {
       merged.push({
         ...bar,
         profile: interpolateSimulatedProfile(profile, bar.strike) ?? 0,
