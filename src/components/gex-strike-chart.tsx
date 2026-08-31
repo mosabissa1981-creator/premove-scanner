@@ -20,7 +20,9 @@ import {
   createBarYScale,
   createProfileYScale,
   createStrikeXScale,
+  plotXToStrike,
   profileSeriesFromUnified,
+  resolvePlotStrikeDomain,
   splitStrikeSeriesForChart,
   unifiedChartToGexPoint,
 } from "@/utils/chart-domain";
@@ -31,7 +33,7 @@ import {
   GEX_CHART_AXIS,
   GEX_CHART_LAYOUT,
   GEX_CHART_THEME,
-  resolveBottomBadgeLayout,
+  layoutPinnedReferenceBadges,
   resolveLineLabelLayouts,
 } from "@/lib/gex-study/gex-chart-ui";
 
@@ -90,6 +92,22 @@ function touchCenter(touches: TouchList): { x: number; y: number } {
   };
 }
 
+function clientViewBoxX(clientX: number, rect: Pick<DOMRect, "left" | "width">): number {
+  const rel = (clientX - rect.left) / rect.width;
+  return rel * CHART_WIDTH;
+}
+
+function strikeAtClientX(
+  clientX: number,
+  rect: Pick<DOMRect, "left" | "width">,
+  plotX: ReturnType<typeof createStrikeXScale>,
+  plotLeft: number,
+  plotWidth: number,
+): number {
+  const viewBoxX = clientViewBoxX(clientX, rect);
+  return plotXToStrike(viewBoxX, plotX.domainMin, plotX.domainMax, plotLeft, plotWidth);
+}
+
 export function GexStrikeChart({
   strikes,
   stockPrice,
@@ -113,6 +131,12 @@ export function GexStrikeChart({
   );
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const viewportRef = useRef(viewport);
+  const plotXRef = useRef({
+    domainMin: 0,
+    domainMax: 1,
+    plotLeft: PAD.left,
+    plotW: CHART_WIDTH - PAD.left - PAD.right,
+  });
   const gestureRef = useRef<{
     mode: "none" | "pan" | "pinch" | "tap";
     startViewport: StrikeViewport;
@@ -162,7 +186,14 @@ export function GexStrikeChart({
       const el = containerRef.current;
       if (!el || !chartStrikes.length) return;
       const rect = el.getBoundingClientRect();
-      const strike = clientXToStrike(clientX, rect, viewportRef.current);
+      const { domainMin, domainMax, plotLeft, plotW } = plotXRef.current;
+      const strike = plotXToStrike(
+        clientViewBoxX(clientX, rect),
+        domainMin,
+        domainMax,
+        plotLeft,
+        plotW,
+      );
       const visible = strikesInViewport(chartStrikes, viewportRef.current);
       const point = nearestStrike(visible, strike);
       if (!point) return;
@@ -335,15 +366,35 @@ export function GexStrikeChart({
   });
   const barSeries = barSeriesFromUnified(visibleUnified);
   const profileSeries = profileSeriesFromUnified(visibleUnified);
-  const strikeMin = Math.min(viewport.min, viewport.max);
-  const strikeMax = Math.max(viewport.min, viewport.max);
+
+  const spotStrike = coerceStrike(stockPrice);
+  const wallStrikes = [coerceStrike(putWall), coerceStrike(gammaFlip), coerceStrike(callWall)].filter(
+    (strike): strike is number => strike != null,
+  );
+  const plottedStrikes = [
+    ...visibleUnified.map((point) => point.strike),
+    ...wallStrikes,
+    ...(spotStrike != null ? [spotStrike] : []),
+  ];
+
+  const { domainMin: strikeMin, domainMax: strikeMax } = resolvePlotStrikeDomain(
+    viewport,
+    bounds,
+    plottedStrikes,
+  );
   const strikeSpan = strikeMax - strikeMin || 1;
 
   const plotW = CHART_WIDTH - PAD.left - PAD.right;
   const plotH = CHART_HEIGHT - PAD.top - PAD.bottom;
 
-  const xAxis = createStrikeXScale(strikeMin, strikeMax, PAD.left, plotW);
-  const xForStrike = (strike: number) => xAxis.toX(strike);
+  const plotX = createStrikeXScale(strikeMin, strikeMax, PAD.left, plotW);
+  plotXRef.current = {
+    domainMin: strikeMin,
+    domainMax: strikeMax,
+    plotLeft: PAD.left,
+    plotW,
+  };
+  const xForStrike = (strike: number) => plotX.toX(strike);
 
   const leftAxis = createBarYScale(
     barSeries.map((point) => point.netGex ?? 0),
@@ -381,8 +432,6 @@ export function GexStrikeChart({
     )
     .sort((a, b) => a.value - b.value);
 
-  const spotStrike = coerceStrike(stockPrice);
-
   const yTicks = leftAxis.ticks;
   const profileAxisTicks = rightAxis.ticks;
   const zoomed = isViewportZoomed(viewport, bounds);
@@ -409,11 +458,11 @@ export function GexStrikeChart({
   );
   const levelLabelByKey = new Map(levelLabelLayouts.map((layout) => [layout.key, layout]));
 
-  const bottomLabels = resolveBottomBadgeLayout(
+  const bottomLabels = layoutPinnedReferenceBadges(
     [
       ...levels.map((level) => ({
         key: level.label,
-        x: xForStrike(level.value),
+        strike: level.value,
         text: formatStrike(level.value),
         color: level.color,
       })),
@@ -421,7 +470,7 @@ export function GexStrikeChart({
         ? [
             {
               key: "spot",
-              x: xForStrike(spotStrike),
+              strike: spotStrike,
               text: formatStrike(spotStrike),
               color: "#eff6ff",
               pill: true,
@@ -429,8 +478,9 @@ export function GexStrikeChart({
           ]
         : []),
     ],
+    xForStrike,
     referenceBadgeBaseY,
-    { minSpacingPx: 52, rowHeight: 24 },
+    { rowHeight: 24 },
   );
 
   return (

@@ -7,8 +7,10 @@ import {
   createStrikeXScale,
   profileSeriesFromUnified,
   profileSeriesPoints,
+  resolvePlotStrikeDomain,
   splitStrikeSeriesForChart,
   strikeDomainFromValues,
+  strikeToPlotX,
   symmetricDomain,
 } from "@/utils/chart-domain";
 
@@ -103,6 +105,30 @@ describe("profileSeriesPoints", () => {
     ]);
     expect(series.map((point) => point.strike)).toEqual([250, 270]);
     expect(series[1]?.profile).toBe(200);
+  });
+});
+
+describe("strikeToPlotX", () => {
+  it("matches createStrikeXScale.toX for profile path and reference lines", () => {
+    const scale = createStrikeXScale(45, 80, 82, 556);
+    expect(strikeToPlotX(65.5, 45, 80, 82, 556)).toBeCloseTo(scale.toX(65.5), 6);
+    expect(strikeToPlotX(67.02, 45, 80, 82, 556)).toBeCloseTo(scale.toX(67.02), 6);
+  });
+});
+
+describe("resolvePlotStrikeDomain", () => {
+  it("uses dataMin/dataMax when at full zoom", () => {
+    const bounds = { min: 45, max: 80 };
+    const viewport = { min: 43, max: 90 };
+    const domain = resolvePlotStrikeDomain(viewport, bounds, [50, 63, 67, 75]);
+    expect(domain).toEqual({ domainMin: 50, domainMax: 75 });
+  });
+
+  it("uses the zoomed viewport when narrowed", () => {
+    const bounds = { min: 45, max: 80 };
+    const viewport = { min: 60, max: 70 };
+    const domain = resolvePlotStrikeDomain(viewport, bounds, [62, 65, 68]);
+    expect(domain).toEqual({ domainMin: 60, domainMax: 70 });
   });
 });
 
