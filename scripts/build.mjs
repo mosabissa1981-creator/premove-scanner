@@ -16,5 +16,8 @@ if (isWorkersCi) {
   run("npm --prefix scorch-hot run build");
 } else {
   console.log("Building PreMove (Next.js)");
+  if (process.env.DATABASE_URL) {
+    run("npx prisma generate");
+  }
   run("next build");
 }
