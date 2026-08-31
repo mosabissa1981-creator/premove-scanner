@@ -26,8 +26,10 @@ import {
 } from "@/utils/chart-domain";
 import {
   buildProfileFillPolygons,
+  computeBackgroundStrikeTicks,
   formatChartMoney,
   GEX_CHART_AXIS,
+  GEX_CHART_LAYOUT,
   GEX_CHART_THEME,
   resolveBottomBadgeLayout,
   resolveLineLabelLayouts,
@@ -385,14 +387,21 @@ export function GexStrikeChart({
   const profileAxisTicks = rightAxis.ticks;
   const zoomed = isViewportZoomed(viewport, bounds);
 
+  const reservedStrikes = [
+    ...levels.map((level) => level.value),
+    ...(spotStrike != null ? [spotStrike] : []),
+  ];
+
   const minLabelSpacing = 56;
   const maxXTicks = Math.max(3, Math.floor(plotW / minLabelSpacing));
   const xTickStep = Math.max(1, Math.ceil(strikeSpan / maxXTicks / 5) * 5);
-  const xTicks: number[] = [];
-  const firstTick = Math.ceil(strikeMin / xTickStep) * xTickStep;
-  for (let t = firstTick; t <= strikeMax; t += xTickStep) {
-    xTicks.push(t);
-  }
+  const xTicks = computeBackgroundStrikeTicks(strikeMin, strikeMax, reservedStrikes, {
+    step: xTickStep,
+  });
+
+  const plotBottom = PAD.top + plotH;
+  const axisTickY = plotBottom + 16;
+  const referenceBadgeBaseY = plotBottom + 16 + GEX_CHART_LAYOUT.referenceBadgeDy;
 
   const levelLabelLayouts = resolveLineLabelLayouts(
     levels.map((level) => ({ key: level.label, x: xForStrike(level.value) })),
@@ -420,7 +429,7 @@ export function GexStrikeChart({
           ]
         : []),
     ],
-    CHART_HEIGHT - 14,
+    referenceBadgeBaseY,
     { minSpacingPx: 52, rowHeight: 24 },
   );
 
@@ -659,7 +668,7 @@ export function GexStrikeChart({
             <text
               key={`xs-${tick}`}
               x={xForStrike(tick)}
-              y={CHART_HEIGHT - 30}
+              y={axisTickY}
               textAnchor="middle"
               fill="#d4d4d8"
               fontSize={AXIS_FONT}

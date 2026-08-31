@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeBackgroundStrikeTicks,
   resolveBottomBadgeLayout,
   resolveLineLabelLayouts,
 } from "@/lib/gex-study/gex-chart-ui";
@@ -43,6 +44,19 @@ describe("resolveLineLabelLayouts", () => {
       { key: "call", x: 320 },
     ]);
     expect(layouts.every((layout) => layout.dx === 0)).toBe(true);
+  });
+});
+
+describe("computeBackgroundStrikeTicks", () => {
+  it("skips axis ticks that would collide with wall badges (e.g. 65 near 65.50)", () => {
+    const ticks = computeBackgroundStrikeTicks(45, 80, [63, 65.5, 67.02, 67.5], { step: 5 });
+    expect(ticks).toEqual([45, 50, 55, 60, 70, 75, 80]);
+  });
+
+  it("returns no ticks when showTicks is false", () => {
+    expect(
+      computeBackgroundStrikeTicks(45, 80, [67], { step: 5, showTicks: false }),
+    ).toEqual([]);
   });
 });
 

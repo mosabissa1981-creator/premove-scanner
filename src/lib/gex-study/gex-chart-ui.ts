@@ -80,6 +80,47 @@ export function buildProfileFillPolygons(
   return { negative, positive };
 }
 
+export const GEX_CHART_LAYOUT = {
+  /** Vertical gap between background axis tick row and reference badges (Recharts dy≈10). */
+  referenceBadgeDy: 18,
+  /** Skip axis ticks within this many strike points of a wall/spot label. */
+  axisTickClearanceStrikes: 2.5,
+  /** Preferred round-number step for background axis ticks. */
+  axisTickStep: 5,
+} as const;
+
+/**
+ * Background X-axis strike ticks that avoid colliding with wall/spot reference badges.
+ * Returns an empty list when `showTicks` is false (badges-only mode).
+ */
+export function computeBackgroundStrikeTicks(
+  strikeMin: number,
+  strikeMax: number,
+  reservedStrikes: number[],
+  options?: {
+    step?: number;
+    clearance?: number;
+    showTicks?: boolean;
+  },
+): number[] {
+  if (options?.showTicks === false) return [];
+
+  const step = options?.step ?? GEX_CHART_LAYOUT.axisTickStep;
+  const clearance = options?.clearance ?? GEX_CHART_LAYOUT.axisTickClearanceStrikes;
+  const min = Math.min(strikeMin, strikeMax);
+  const max = Math.max(strikeMin, strikeMax);
+
+  const ticks: number[] = [];
+  const first = Math.ceil(min / step) * step;
+  for (let tick = first; tick <= max; tick += step) {
+    const blocked = reservedStrikes.some(
+      (level) => Number.isFinite(level) && Math.abs(level - tick) < clearance,
+    );
+    if (!blocked) ticks.push(tick);
+  }
+  return ticks;
+}
+
 export function formatChartMoney(value: number, signed = false): string {
   const abs = Math.abs(value);
   const sign = value < 0 ? "-" : signed && value > 0 ? "+" : "";
