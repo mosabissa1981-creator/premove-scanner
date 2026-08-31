@@ -391,27 +391,6 @@ export function buildCumulativeProfile(points: GexStrikePoint[]): GexStrikePoint
   });
 }
 
-/** OptionCharts-style cumulative gamma profile for chart display (no rebase). */
-export function buildChartCumulativeProfile(
-  points: GexStrikePoint[],
-  stockPrice: number | null,
-  profileSource?: GexStrikePoint[],
-): GexStrikePoint[] {
-  const window = filterStrikeWindow(points, stockPrice);
-  if (!window.length) return [];
-
-  const sorted = [...(profileSource ?? points)].sort((a, b) => a.strike - b.strike);
-  const fullCumulative = buildCumulativeProfile(sorted);
-  const windowStrikes = new Set(window.map((point) => point.strike));
-
-  return points
-    .filter((point) => windowStrikes.has(point.strike))
-    .map((point) => ({
-      ...point,
-      profile: interpolateProfileAtStrike(fullCumulative, point.strike) ?? 0,
-    }));
-}
-
 /** Full-chain cumulative gamma profile rebased to zero at gamma flip. */
 export function buildCumulativeProfileAtFlip(
   points: GexStrikePoint[],
