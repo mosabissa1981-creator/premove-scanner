@@ -24,7 +24,7 @@ import {
   resolveTradingDate,
   summarizeStrikeSeries,
 } from "@/lib/gex-study/gex-study";
-import type { OptionChainLeg } from "@/lib/gex-study/gamma-profile-sim";
+import type { OptionChainLeg } from "@/utils/gamma-math";
 import type { UwSpotExposureStrikeRow } from "@/lib/unusualwhales/types";
 
 const rows: UwSpotExposureStrikeRow[] = [

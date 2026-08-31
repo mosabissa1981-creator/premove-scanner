@@ -1,14 +1,14 @@
 import type { UnusualWhalesClient } from "@/lib/unusualwhales/client";
 import {
-  buildRebaseAtFlipProfile,
   dedupeChainLegs,
-  gammaFlipFromRawProfile,
   mergeSimulatedProfileOntoBars,
-  simulateRawNetGexProfile,
   type OptionChainLeg,
 } from "@/lib/gex-study/gamma-profile-sim";
 import {
-  buildProfileAtFlip,
+  buildChainSimulatedGammaProfile,
+  buildLocalizedBarProfileAtFlip,
+  gammaFlipFromRawProfile,
+  simulateRawNetGexProfile,
 } from "@/utils/gamma-math";
 import {
   computeGexLevelsFromUw,
@@ -403,7 +403,7 @@ export function buildCumulativeProfileAtFlip(
   if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
 
   const sorted = [...(profileSource ?? points)].sort((a, b) => a.strike - b.strike);
-  const rebased = buildProfileAtFlip(
+  const rebased = buildLocalizedBarProfileAtFlip(
     sorted.map((point) => point.strike),
     sorted.map((point) => point.netGex),
     gammaFlip,
@@ -446,7 +446,7 @@ export function buildFlipAnchoredProfile(
   if (gammaFlip == null) return rebaseProfileWindow(points, stockPrice);
 
   const sorted = [...window].sort((a, b) => a.strike - b.strike);
-  const rebased = buildProfileAtFlip(
+  const rebased = buildLocalizedBarProfileAtFlip(
     sorted.map((point) => point.strike),
     sorted.map((point) => point.netGex),
     gammaFlip,
@@ -1164,7 +1164,12 @@ export function buildSimulatedChartStrikes(
 
   const minStrike = windowed[0].strike;
   const maxStrike = windowed[windowed.length - 1].strike;
-  const windowProfile = buildRebaseAtFlipProfile(raw, anchorFlip).filter(
+  const windowProfile = buildChainSimulatedGammaProfile(
+    legs,
+    stockPrice,
+    anchorFlip,
+    { asOfDate: tradingDate, steps: 250 },
+  ).filter(
     (point) => point.simulatedSpot >= minStrike && point.simulatedSpot <= maxStrike,
   );
 
