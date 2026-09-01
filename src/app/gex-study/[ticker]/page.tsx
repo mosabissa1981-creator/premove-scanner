@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { GexStrikeChart } from "@/components/gex-strike-chart";
+import { GexDealerRead } from "@/components/gex-dealer-read";
 import { TickerSearch } from "@/components/ticker-search";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
 import { formatMoney, formatPrice, gexRegimeBadge } from "@/lib/format";
@@ -188,6 +189,8 @@ export default function GexStudyPage({ params }: { params: Promise<{ ticker: str
             gammaFlip={study.gammaFlip}
             callWall={study.callWall}
           />
+
+          <GexDealerRead study={study} />
 
           <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 sm:p-5">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-400 sm:text-base">
