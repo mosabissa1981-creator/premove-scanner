@@ -405,6 +405,43 @@ export function buildSimulatedProfileFromRawTotals(
   return toSimulatedProfilePoints(rebased);
 }
 
+/** Rising zero-cross nearest to spot (OptionCharts-style). */
+export function nearestRisingFlipCrossing(
+  xs: number[],
+  ys: number[],
+  stockPrice: number,
+  minStrikeRatio = 0.45,
+  maxStrikeRatio = 1.15,
+): number | null {
+  if (!xs.length || xs.length !== ys.length || stockPrice <= 0) return null;
+
+  const minStrike = stockPrice * minStrikeRatio;
+  const maxStrike = stockPrice * maxStrikeRatio;
+  const crossings: number[] = [];
+
+  for (let i = 1; i < xs.length; i++) {
+    const prevX = xs[i - 1];
+    const currX = xs[i];
+    const prevY = ys[i - 1];
+    const currY = ys[i];
+    if (prevX < minStrike || currX > maxStrike) continue;
+    if (prevY <= 0 && currY >= 0) {
+      const span = currY - prevY;
+      const flip =
+        span === 0
+          ? currX
+          : prevX + (-prevY / span) * (currX - prevX);
+      if (flip >= minStrike && flip <= maxStrike) crossings.push(flip);
+    }
+  }
+
+  if (!crossings.length) return null;
+
+  return crossings.reduce((best, flip) =>
+    Math.abs(flip - stockPrice) < Math.abs(best - stockPrice) ? flip : best,
+  );
+}
+
 export function gammaFlipFromRawProfile(
   raw: RawSimulatedPoint[],
   stockPrice: number,
@@ -412,25 +449,11 @@ export function gammaFlipFromRawProfile(
   if (!raw.length || stockPrice <= 0) return null;
 
   const sorted = [...raw].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
-  const minStrike = stockPrice * 0.45;
-  let deepest: number | null = null;
-
-  for (let i = 1; i < sorted.length; i++) {
-    const prev = sorted[i - 1];
-    const curr = sorted[i];
-    if (curr.simulatedSpot > stockPrice || prev.simulatedSpot < minStrike) continue;
-    if (prev.rawNetGex <= 0 && curr.rawNetGex >= 0) {
-      const span = curr.rawNetGex - prev.rawNetGex;
-      const flip =
-        span === 0
-          ? curr.simulatedSpot
-          : prev.simulatedSpot +
-            (-prev.rawNetGex / span) * (curr.simulatedSpot - prev.simulatedSpot);
-      if (deepest == null || flip < deepest) deepest = flip;
-    }
-  }
-
-  return deepest;
+  return nearestRisingFlipCrossing(
+    sorted.map((point) => point.simulatedSpot),
+    sorted.map((point) => point.rawNetGex),
+    stockPrice,
+  );
 }
 
 // ---------------------------------------------------------------------------

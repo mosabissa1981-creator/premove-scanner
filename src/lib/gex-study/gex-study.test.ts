@@ -18,7 +18,7 @@ import {
   parseOptionContractRows,
   parseOsiOptionSymbol,
   pickAllExpiryGammaFlip,
-  pickDeepestSaneFlipBelowSpot,
+  pickNearestSaneFlipToSpot,
   prepareChartStrikeSeries,
   rebaseProfileWindow,
   resolveTradingDate,
@@ -287,14 +287,14 @@ describe("computeGammaFlipDeep", () => {
   });
 });
 
-describe("pickDeepestSaneFlipBelowSpot", () => {
-  it("prefers the deeper flip when UW returns a nearer level", () => {
-    const flip = pickDeepestSaneFlipBelowSpot([492.51, 404.27, 464.68], 513.15);
-    expect(flip).toBeCloseTo(404.27, 1);
+describe("pickNearestSaneFlipToSpot", () => {
+  it("prefers the flip nearest spot when UW returns multiple levels", () => {
+    const flip = pickNearestSaneFlipToSpot([492.51, 404.27, 464.68], 513.15);
+    expect(flip).toBeCloseTo(492.51, 1);
   });
 
   it("ignores junk crossings far below spot", () => {
-    const flip = pickDeepestSaneFlipBelowSpot([103.85, 344.28], 348.75);
+    const flip = pickNearestSaneFlipToSpot([103.85, 344.28], 348.75);
     expect(flip).toBeCloseTo(344.28, 1);
   });
 });
@@ -310,7 +310,7 @@ describe("buildCumulativeProfileAtFlip", () => {
     ];
     const series = buildStrikeSeries(rows, 266);
     const flipSeries = buildFlipSeries(rows, 266);
-    const gammaFlip = computeGammaFlipDeep(flipSeries, 266)!;
+    const gammaFlip = computeGammaFlipFromWindow(flipSeries, 266)!;
     const chart = buildCumulativeProfileAtFlip(series, 266, gammaFlip, flipSeries);
     expect(interpolateProfileAtStrike(chart, 220)!).toBeLessThan(0);
     expect(interpolateProfileAtStrike(chart, 270)!).toBeGreaterThan(0);
@@ -335,7 +335,7 @@ describe("buildCumulativeProfileAtFlip", () => {
     ];
     const series = buildStrikeSeries(rows, 266);
     const flipSeries = buildFlipSeries(rows, 266);
-    const gammaFlip = computeGammaFlipDeep(flipSeries, 266)!;
+    const gammaFlip = computeGammaFlipFromWindow(flipSeries, 266)!;
     const chart = buildCumulativeProfileAtFlip(series, 266, gammaFlip, flipSeries);
     const at220 = interpolateProfileAtStrike(chart, 220)!;
     const at245 = interpolateProfileAtStrike(chart, 245)!;
@@ -394,7 +394,7 @@ describe("prepareChartStrikeSeries", () => {
     ];
     const series = buildStrikeSeries(rows, 266);
     const flipSeries = buildFlipSeries(rows, 266);
-    const gammaFlip = computeGammaFlipDeep(flipSeries, 266)!;
+    const gammaFlip = computeGammaFlipFromWindow(flipSeries, 266)!;
     const chart = prepareChartStrikeSeries(series, 266, gammaFlip, flipSeries);
     const atFlip = interpolateProfileAtStrike(chart, gammaFlip);
     const below = interpolateProfileAtStrike(chart, 250);
@@ -413,7 +413,7 @@ describe("prepareChartStrikeSeries", () => {
     ];
     const series = buildStrikeSeries(rows, 355);
     const flipSeries = buildFlipSeries(rows, 355);
-    const gammaFlip = computeGammaFlipDeep(flipSeries, 355)!;
+    const gammaFlip = computeGammaFlipFromWindow(flipSeries, 355)!;
     const chart = prepareChartStrikeSeries(series, 355, gammaFlip, flipSeries);
     const below = chart.find((point) => point.strike === 340);
     const above = chart.find((point) => point.strike === 360);
@@ -476,12 +476,12 @@ describe("pickAllExpiryGammaFlip", () => {
     expect(flip).toBeCloseTo(344.28, 1);
   });
 
-  it("prefers the deeper vol flip for MSFT when OI profile is nearer to spot", () => {
+  it("prefers the profile flip over deeper UW levels (OptionCharts-style)", () => {
     const flip = pickAllExpiryGammaFlip(492.51, 492.51, 404.27, 513.15);
-    expect(flip).toBeCloseTo(404.27, 1);
+    expect(flip).toBeCloseTo(492.51, 1);
   });
 
-  it("prefers a deeper nearby OI flip for AMZN-style charts", () => {
+  it("uses profile flip for AMZN instead of a deeper OI nearby flip", () => {
     const flip = pickAllExpiryGammaFlip(263, 256.86, null, 266.43, {
       call_wall: "275",
       put_wall: "250",
@@ -489,10 +489,10 @@ describe("pickAllExpiryGammaFlip", () => {
       gamma_magnet: null,
       nearby_flips: ["238.20", "256.86"],
     });
-    expect(flip).toBeCloseTo(238.2, 1);
+    expect(flip).toBeCloseTo(263, 1);
   });
 
-  it("selects OI flip 238 for AMZN when profile zero crossing is near 263", () => {
+  it("keeps profile flip when it is nearer to spot than OI levels", () => {
     const profileFlip = 263.54;
     const spot = 266.43;
     const flip = pickAllExpiryGammaFlip(
@@ -508,13 +508,12 @@ describe("pickAllExpiryGammaFlip", () => {
         nearby_flips: ["238.20", "256.86"],
       },
     );
-    expect(flip).toBeCloseTo(238.2, 1);
-    expect(flip!).toBeLessThan(profileFlip);
+    expect(flip).toBeCloseTo(profileFlip, 1);
   });
 
-  it("uses the deepest vol flip when it is below the OI headline flip", () => {
+  it("falls back to nearest UW flip when profile is unavailable", () => {
     const flip = pickAllExpiryGammaFlip(
-      248.42,
+      null,
       248.42,
       null,
       266.43,
@@ -533,7 +532,7 @@ describe("pickAllExpiryGammaFlip", () => {
         nearby_flips: ["238.20"],
       },
     );
-    expect(flip).toBeCloseTo(238.2, 1);
+    expect(flip).toBeCloseTo(256.86, 1);
   });
 
   it("keeps profile and bar magnitudes aligned after chart prep", () => {
@@ -552,9 +551,9 @@ describe("pickAllExpiryGammaFlip", () => {
     expect(maxProfile).toBeLessThan(maxBar * 1000);
   });
 
-  it("keeps the deeper NVDA flip when both profile and OI are valid", () => {
+  it("uses the profile flip when both profile and OI are valid", () => {
     const flip = pickAllExpiryGammaFlip(216.43, 199.77, null, 217.55);
-    expect(flip).toBeCloseTo(199.77, 1);
+    expect(flip).toBeCloseTo(216.43, 1);
   });
 });
 

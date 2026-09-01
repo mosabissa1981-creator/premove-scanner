@@ -24,45 +24,27 @@ function isUsableFlip(flip: number, stockPrice: number): boolean {
   return isRelevantGammaFlip(flip, stockPrice);
 }
 
-/** Prefer UW primary gamma_flip (nearest to spot per API), then nearest nearby fallback. */
+/** Prefer profile zero-cross near spot; otherwise nearest sane UW flip. */
 export function resolveGammaFlip(
   levels: UwGexLevels | null | undefined,
   stockPrice: number,
   profileFlip: number | null,
 ): number | null {
-  const primary = parseLevel(levels?.gamma_flip);
-  if (primary != null && isUsableFlip(primary, stockPrice)) {
-    return primary;
-  }
-
-  for (const flip of levels?.nearby_flips ?? []) {
-    const parsed = parseLevel(flip);
-    if (
-      parsed != null &&
-      isUsableFlip(parsed, stockPrice) &&
-      (stockPrice <= 0 || parsed <= stockPrice + 1e-6)
-    ) {
-      return parsed;
-    }
-  }
-
-  const aboveSpot = (levels?.nearby_flips ?? [])
-    .map(parseLevel)
-    .filter(
-      (flip): flip is number =>
-        flip != null && isUsableFlip(flip, stockPrice) && flip > stockPrice + 1e-6,
-    );
-  if (aboveSpot.length && stockPrice > 0) {
-    return aboveSpot.reduce((best, flip) =>
-      Math.abs(flip - stockPrice) < Math.abs(best - stockPrice) ? flip : best,
-    );
-  }
-
   if (profileFlip != null && isUsableFlip(profileFlip, stockPrice)) {
     return profileFlip;
   }
 
-  return null;
+  const candidates = [
+    parseLevel(levels?.gamma_flip),
+    ...(levels?.nearby_flips ?? []).map(parseLevel),
+  ].filter((flip): flip is number => flip != null && isUsableFlip(flip, stockPrice));
+
+  if (!candidates.length) return null;
+  if (stockPrice <= 0) return candidates[0];
+
+  return candidates.reduce((best, flip) =>
+    Math.abs(flip - stockPrice) < Math.abs(best - stockPrice) ? flip : best,
+  );
 }
 
 export function computeGexLevelsFromUw(
