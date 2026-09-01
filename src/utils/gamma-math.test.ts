@@ -11,6 +11,7 @@ import {
   filterLegsByMaxDte,
   gammaFlipFromRawProfile,
   interpolateSeriesAtX,
+  nearestRisingFlipCrossing,
   MAX_GEX_PROFILE_DTE,
   rebaseProfileAtFlip,
   simulateRawNetGexProfile,
@@ -274,6 +275,25 @@ describe("computeGexWallsFromSeries", () => {
     );
     expect(walls.putWall).toBe(125);
     expect(walls.callWall).toBe(130);
+  });
+});
+
+describe("nearestRisingFlipCrossing", () => {
+  it("prefers the near-spot flip over a deep structural crossing (MDLZ-style)", () => {
+    const xs = [45, 48, 55, 60, 62, 63, 70];
+    const ys = [-100, 50, 80, 40, -20, 30, 100];
+    const flip = nearestRisingFlipCrossing(xs, ys, 62.24)!;
+    expect(flip).toBeGreaterThan(60);
+    expect(flip).toBeLessThan(63);
+    expect(flip).toBeGreaterThan(48);
+  });
+
+  it("allows a flip slightly above spot when that is the nearest crossing (EEM-style)", () => {
+    const xs = [60, 64, 66, 68, 70];
+    const ys = [-50, -20, -5, 10, 30];
+    const flip = nearestRisingFlipCrossing(xs, ys, 67.21)!;
+    expect(flip).toBeGreaterThan(66.5);
+    expect(flip).toBeLessThan(67.5);
   });
 });
 

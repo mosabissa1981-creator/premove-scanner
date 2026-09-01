@@ -359,6 +359,21 @@ export function pickDeepestSaneFlipBelowSpot(
   return Math.min(...sane);
 }
 
+/** OptionCharts-style: flip nearest to spot among sane candidates. */
+export function pickNearestSaneFlipToSpot(
+  candidates: (number | null | undefined)[],
+  stockPrice: number,
+): number | null {
+  const sane = candidates.filter(
+    (flip): flip is number => flip != null && isSaneGammaFlip(flip, stockPrice),
+  );
+  if (!sane.length) return null;
+  if (stockPrice <= 0) return sane[0];
+  return sane.reduce((best, flip) =>
+    Math.abs(flip - stockPrice) < Math.abs(best - stockPrice) ? flip : best,
+  );
+}
+
 /** Interpolate cumulative gamma profile at an arbitrary strike. */
 export function interpolateProfileAtStrike(
   points: GexStrikePoint[],
@@ -489,6 +504,19 @@ function parseGexLevel(value: string | null | undefined): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+/** Collect all sane gamma flips from UW levels (primary + nearby). */
+export function collectSaneFlips(
+  levels: UwGexLevels | null | undefined,
+  stockPrice: number,
+): number[] {
+  const candidates = [levels?.gamma_flip, ...(levels?.nearby_flips ?? [])];
+  return candidates
+    .map(parseGexLevel)
+    .filter(
+      (flip): flip is number => flip != null && isSaneGammaFlip(flip, stockPrice),
+    );
+}
+
 /** Collect OI gamma flips from UW levels (primary + nearby). */
 export function collectRelevantOiFlips(
   levels: UwGexLevels | null | undefined,
@@ -521,7 +549,7 @@ function mergeGexLevels(
   };
 }
 
-/** Chart gamma flip: deepest UW OI/vol flip below spot, with profile fallback. */
+/** Chart gamma flip: profile zero-cross near spot (OptionCharts-style), UW fallback. */
 export function resolveChartGammaFlip(
   profileFlip: number | null,
   stockPrice: number,
@@ -532,63 +560,29 @@ export function resolveChartGammaFlip(
 ): number | null {
   if (stockPrice <= 0) return profileFlip;
 
-  const oiFlips = [
-    ...collectRelevantOiFlips(oiLevels, stockPrice),
-    ...(extraOiFlip != null && isRelevantGammaFlip(extraOiFlip, stockPrice) ? [extraOiFlip] : []),
-  ];
-  const volFlips = collectRelevantOiFlips(volLevels, stockPrice);
-  const levelFlips = [
-    ...collectRelevantOiFlips(oiLevels, stockPrice),
-    ...collectRelevantOiFlips(volLevels, stockPrice),
-  ];
-  const oiDeep = oiFlips.length ? Math.min(...oiFlips) : null;
-  const volDeep = volFlips.length ? Math.min(...volFlips) : null;
-  const levelDeep = levelFlips.length ? Math.min(...levelFlips) : null;
   const profile =
     profileFlip != null && isSaneGammaFlip(profileFlip, stockPrice) ? profileFlip : null;
 
-  // MSFT-style: vol flip materially deeper than OI when both sit near spot.
-  if (
-    oiDeep != null &&
-    volDeep != null &&
-    volDeep < oiDeep &&
-    (oiDeep - volDeep) / stockPrice > 0.05 &&
-    profile != null &&
-    Math.abs(profile - oiDeep) / stockPrice < 0.05
-  ) {
-    return volDeep;
+  const levelFlips = [
+    ...collectSaneFlips(oiLevels, stockPrice),
+    ...collectSaneFlips(volLevels, stockPrice),
+    ...(extraOiFlip != null && isSaneGammaFlip(extraOiFlip, stockPrice) ? [extraOiFlip] : []),
+    ...(extraVolFlip != null && isSaneGammaFlip(extraVolFlip, stockPrice) ? [extraVolFlip] : []),
+  ];
+  const uwNearest = pickNearestSaneFlipToSpot(levelFlips, stockPrice);
+
+  if (profile != null) {
+    if (uwNearest != null) {
+      const profileDist = Math.abs(profile - stockPrice);
+      const uwDist = Math.abs(uwNearest - stockPrice);
+      if (profileDist > stockPrice * 0.15 && uwDist < profileDist * 0.25) {
+        return uwNearest;
+      }
+    }
+    return profile;
   }
 
-  // Prefer deepest UW level flip (OI + vol nearby) when profile sits above it.
-  if (levelDeep != null) {
-    if (profile == null || profile - levelDeep > stockPrice * 0.01) return levelDeep;
-    if (profile < stockPrice * 0.75 && levelDeep > profile) return levelDeep;
-  }
-
-  // Prefer deepest OI flip from headline/extra OI when level flips are unavailable.
-  if (oiDeep != null) {
-    if (profile == null || profile - oiDeep > stockPrice * 0.01) return oiDeep;
-    if (profile < stockPrice * 0.75 && oiDeep > profile) return oiDeep;
-  }
-
-  if (profile != null && volDeep != null && volDeep < profile) {
-    if ((profile - volDeep) / stockPrice > 0.05) return volDeep;
-  }
-  if (
-    profile != null &&
-    extraVolFlip != null &&
-    isRelevantGammaFlip(extraVolFlip, stockPrice) &&
-    extraVolFlip < profile &&
-    (profile - extraVolFlip) / stockPrice > 0.05
-  ) {
-    return extraVolFlip;
-  }
-  if (profile != null) return profile;
-  if (levelDeep != null) return levelDeep;
-  if (oiDeep != null) return oiDeep;
-  if (volDeep != null) return volDeep;
-  if (extraVolFlip != null && isRelevantGammaFlip(extraVolFlip, stockPrice)) return extraVolFlip;
-  return null;
+  return uwNearest;
 }
 
 /** @deprecated Use resolveChartGammaFlip */
@@ -1253,8 +1247,8 @@ export async function fetchGexStudy(
   }
 
   const profileFlipFromBars =
-    computeGammaFlipDeep(profileStrikeSeries, stockPrice) ??
-    computeGammaFlipFromWindow(profileStrikeSeries, stockPrice);
+    computeGammaFlipFromWindow(profileStrikeSeries, stockPrice) ??
+    computeGammaFlip(profileStrikeSeries, stockPrice);
 
   let simulatedFlip: number | null = null;
   if (chainLegs.length >= MIN_CHAIN_LEGS && stockPrice != null && stockPrice > 0) {

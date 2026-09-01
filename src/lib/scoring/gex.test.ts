@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { pickDeepestSaneFlipBelowSpot } from "@/lib/gex-study/gex-study";
+import { pickNearestSaneFlipToSpot } from "@/lib/gex-study/gex-study";
 import { computeGexLevelsFromUw, resolveGammaFlip } from "@/lib/scoring/gex";
 
 describe("resolveGammaFlip", () => {
-  it("rejects deep OTM flips and uses the deepest sane flip at or below spot", () => {
+  it("rejects deep OTM flips and uses the nearest sane flip to spot", () => {
     const flip = resolveGammaFlip(
       {
         gamma_flip: "4.5",
@@ -15,10 +15,10 @@ describe("resolveGammaFlip", () => {
       217.55,
       null,
     );
-    expect(flip).toBeCloseTo(199.77, 1);
+    expect(flip).toBeCloseTo(210, 1);
   });
 
-  it("prefers the deeper primary flip over a nearer nearby flip (MSFT-style)", () => {
+  it("prefers profile flip over UW levels (OptionCharts-style)", () => {
     const flip = resolveGammaFlip(
       {
         gamma_flip: "404.27",
@@ -30,10 +30,10 @@ describe("resolveGammaFlip", () => {
       513.15,
       492.51,
     );
-    expect(flip).toBeCloseTo(404.27, 1);
+    expect(flip).toBeCloseTo(492.51, 1);
   });
 
-  it("merges oi and vol candidates and keeps the deepest flip below spot", () => {
+  it("merges oi and vol candidates and keeps the nearest flip to spot", () => {
     const oiFlip = resolveGammaFlip(
       {
         gamma_flip: "492.51",
@@ -58,7 +58,7 @@ describe("resolveGammaFlip", () => {
     );
     expect(oiFlip).toBeCloseTo(492.51, 1);
     expect(volFlip).toBeCloseTo(404.27, 1);
-    expect(pickDeepestSaneFlipBelowSpot([oiFlip, volFlip], 513.15)).toBeCloseTo(404.27, 1);
+    expect(pickNearestSaneFlipToSpot([oiFlip, volFlip], 513.15)).toBeCloseTo(492.51, 1);
   });
 
   it("uses nearby_flips when primary flip is deep OTM", () => {

@@ -33,6 +33,7 @@ import {
   buildLocalizedBarProfileAtFlip,
   buildSimulatedProfileFromRawTotals,
   gammaFlipFromRawProfile,
+  nearestRisingFlipCrossing,
   simulateRawNetGexProfile,
 } from "@/utils/gamma-math";
 
@@ -119,25 +120,11 @@ export function gammaFlipFromSimulatedProfile(
   if (!profile.length || stockPrice <= 0) return null;
 
   const sorted = [...profile].sort((a, b) => a.simulatedSpot - b.simulatedSpot);
-  const minStrike = stockPrice * 0.45;
-  let deepest: number | null = null;
-
-  for (let i = 1; i < sorted.length; i++) {
-    const prev = sorted[i - 1];
-    const curr = sorted[i];
-    if (curr.simulatedSpot > stockPrice || prev.simulatedSpot < minStrike) continue;
-    if (prev.profile <= 0 && curr.profile >= 0) {
-      const span = curr.profile - prev.profile;
-      const flip =
-        span === 0
-          ? curr.simulatedSpot
-          : prev.simulatedSpot +
-            (-prev.profile / span) * (curr.simulatedSpot - prev.simulatedSpot);
-      if (deepest == null || flip < deepest) deepest = flip;
-    }
-  }
-
-  return deepest;
+  return nearestRisingFlipCrossing(
+    sorted.map((point) => point.simulatedSpot),
+    sorted.map((point) => point.profile),
+    stockPrice,
+  );
 }
 
 export function flipIndexForPrice(
