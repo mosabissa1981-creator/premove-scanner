@@ -19,6 +19,12 @@ import {
   isSaneGammaFlip,
   resolveGammaFlip,
 } from "@/lib/scoring/gex";
+import {
+  applyAuthoritativeGexToSeries,
+  resolveAuthoritativeGexTotals,
+  scaleStrikeSeries,
+  summarizeStrikeSeries,
+} from "@/lib/gex-study/authoritative-gex";
 import { expiryKey, selectExpiryRows, ymd } from "@/lib/gex-scan/gex-scan";
 import type {
   GexExpiryMode,
@@ -611,50 +617,7 @@ export function computeWallsFromSeries(
   return computeGexWallsFromSeries(points, stockPrice);
 }
 
-export function summarizeStrikeSeries(points: GexStrikePoint[]): {
-  callGex: number;
-  putGex: number;
-  netGex: number;
-} {
-  let callGex = 0;
-  let putGex = 0;
-  for (const point of points) {
-    callGex += point.callGex;
-    putGex += point.putGex;
-  }
-  return { callGex, putGex, netGex: callGex + putGex };
-}
-
-function scaleStrikeSeries(points: GexStrikePoint[], factor: number): GexStrikePoint[] {
-  if (!Number.isFinite(factor) || factor === 1) return points;
-  let cumulative = 0;
-  return points.map((point) => {
-    const callGex = point.callGex * factor;
-    const putGex = point.putGex * factor;
-    const netGex = callGex + putGex;
-    cumulative += netGex;
-    return { ...point, callGex, putGex, netGex, profile: cumulative };
-  });
-}
-
-function alignTotalsToNetGex(
-  strikeTotals: { callGex: number; putGex: number; netGex: number },
-  authoritativeNet: number,
-): { callGex: number; putGex: number; netGex: number } {
-  if (!Number.isFinite(authoritativeNet) || authoritativeNet === 0) return strikeTotals;
-  if (strikeTotals.netGex === 0) return strikeTotals;
-
-  const scale = authoritativeNet / strikeTotals.netGex;
-  if (!Number.isFinite(scale) || Math.abs(scale - 1) < 0.05) {
-    return { ...strikeTotals, netGex: authoritativeNet };
-  }
-
-  return {
-    callGex: strikeTotals.callGex * scale,
-    putGex: strikeTotals.putGex * scale,
-    netGex: authoritativeNet,
-  };
-}
+export { summarizeStrikeSeries } from "@/lib/gex-study/authoritative-gex";
 
 export function resolveStudyExpiry(
   expiries: UwGreekExposureExpiryRow[],
@@ -847,28 +810,6 @@ async function fetchStrikeRowsWithFallback(
   if (hasUsableSpotStrikes(greekRows)) return { rows: greekRows, source: "greek" };
 
   return { rows: [], source: "greek" };
-}
-
-function latestSpotSnapshot(
-  snapshots: UwSpotExposureSnapshot[] | undefined,
-): UwSpotExposureSnapshot | null {
-  if (!snapshots?.length) return null;
-  return snapshots.reduce((latest, row) => {
-    if (!latest) return row;
-    const latestTime = Date.parse(latest.time);
-    const rowTime = Date.parse(row.time);
-    if (Number.isNaN(latestTime) || Number.isNaN(rowTime)) return row;
-    return rowTime >= latestTime ? row : latest;
-  });
-}
-
-function latestSpotNetGex(
-  snapshots: UwSpotExposureSnapshot[] | undefined,
-): number | null {
-  const latest = latestSpotSnapshot(snapshots);
-  if (!latest?.gamma_per_one_percent_move_oi) return null;
-  const net = parseFloat(latest.gamma_per_one_percent_move_oi);
-  return Number.isNaN(net) ? null : net;
 }
 
 function normalizeIv(raw: number): number {
@@ -1166,9 +1107,7 @@ export async function fetchGexStudy(
     client.greekExposureByExpiry(ticker) as Promise<UwDataResponse<UwGreekExposureExpiryRow[]>>,
     client.gexLevels(ticker, "oi", tradingDate) as Promise<UwDataResponse<UwGexLevels>>,
     client.gexLevels(ticker, "vol", tradingDate) as Promise<UwDataResponse<UwGexLevels>>,
-    useAll
-      ? (client.spotExposures(ticker) as Promise<UwDataResponse<UwSpotExposureSnapshot[]>>)
-      : Promise.resolve(null),
+    client.spotExposures(ticker) as Promise<UwDataResponse<UwSpotExposureSnapshot[]>>,
   ]);
 
   const [levelsOiFallback, levelsVolFallback] = await Promise.all([
@@ -1188,14 +1127,12 @@ export async function fetchGexStudy(
   const expiries = expiryRowsForMath.map((row) => expiryKey(row)).filter(Boolean);
 
   let spotTotalsData = spotTotalsRes?.data;
-  if (useAll) {
-    const datedSpotTotals = (await client.spotExposures(
-      ticker,
-      tradingDate,
-    )) as UwDataResponse<UwSpotExposureSnapshot[]>;
-    if (datedSpotTotals.data?.length) {
-      spotTotalsData = datedSpotTotals.data;
-    }
+  const datedSpotTotals = (await client.spotExposures(
+    ticker,
+    tradingDate,
+  )) as UwDataResponse<UwSpotExposureSnapshot[]>;
+  if (datedSpotTotals.data?.length) {
+    spotTotalsData = datedSpotTotals.data;
   }
 
   const strikePayload = await fetchStrikeRowsWithFallback(
@@ -1228,19 +1165,20 @@ export async function fetchGexStudy(
   let flipSeries = buildFlipSeries(strikeRows, stockPrice);
   let profileStrikeSeries = buildProfileSourceSeries(strikeRows);
   let fullSeries = buildStrikeSeries(strikeRows, stockPrice);
-  let totals = summarizeStrikeSeries(fullSeries);
 
-  const authoritativeNet = useAll ? latestSpotNetGex(spotTotalsData) : null;
-  if (authoritativeNet != null) {
-    totals = alignTotalsToNetGex(totals, authoritativeNet);
-    if (totals.netGex !== 0 && fullSeries.length) {
-      const strikeNet = summarizeStrikeSeries(fullSeries).netGex;
-      if (strikeNet !== 0) {
-        const factor = totals.netGex / strikeNet;
-        fullSeries = scaleStrikeSeries(fullSeries, factor);
-        flipSeries = scaleStrikeSeries(flipSeries, factor);
-        profileStrikeSeries = scaleStrikeSeries(profileStrikeSeries, factor);
-      }
+  const authoritative = resolveAuthoritativeGexTotals(
+    expiry,
+    spotTotalsData,
+    expiryRowsAll,
+  );
+  let totals = summarizeStrikeSeries(fullSeries);
+  if (authoritative != null && fullSeries.length) {
+    const aligned = applyAuthoritativeGexToSeries(fullSeries, authoritative);
+    fullSeries = aligned.points;
+    totals = aligned.totals;
+    if (aligned.factor !== 1) {
+      flipSeries = scaleStrikeSeries(flipSeries, aligned.factor);
+      profileStrikeSeries = scaleStrikeSeries(profileStrikeSeries, aligned.factor);
     }
   } else if (strikePayload.source === "greek" && stockPrice != null && stockPrice > 0) {
     totals = summarizeStrikeSeries(fullSeries);
