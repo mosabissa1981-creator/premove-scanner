@@ -40,6 +40,9 @@ export function GexDealerRead({ study }: { study: GexStudyResult }) {
 
       <div className="mt-4 space-y-2 border-t border-zinc-800/80 pt-4 text-xs leading-relaxed text-zinc-500">
         <p>
+          <span className="font-semibold text-zinc-400">Range feel:</span> {narrative.rangeFeel}
+        </p>
+        <p>
           <span className="font-semibold text-zinc-400">Horizon:</span> {narrative.horizon}
         </p>
         <p>

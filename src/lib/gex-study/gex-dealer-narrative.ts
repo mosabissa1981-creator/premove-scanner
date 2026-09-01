@@ -3,6 +3,7 @@ import type { GexStudyResult } from "@/lib/unusualwhales/types";
 export interface GexDealerNarrative {
   summary: string;
   bullets: string[];
+  rangeFeel: string;
   horizon: string;
   validity: string;
 }
@@ -38,6 +39,93 @@ function resolveDte(
   if (!expiry || expiry === "all") return null;
   const match = availableExpiries.find((row) => row.expiry === expiry);
   return match?.dte ?? null;
+}
+
+function isInsideWalls(
+  spot: number,
+  flip: number | null,
+  putWall: number | null,
+  callWall: number | null,
+): boolean {
+  if (flip != null && spot <= flip) return false;
+  if (callWall != null && callWall > spot && pctFromSpot(spot, callWall) > WALL_CLOSE_PCT) {
+    return false;
+  }
+  if (putWall != null && putWall < spot && Math.abs(pctFromSpot(spot, putWall)) > WALL_CLOSE_PCT) {
+    return false;
+  }
+  if (callWall != null && callWall <= spot) return false;
+  return flip != null || putWall != null || callWall != null;
+}
+
+/** Dominant "how long might this structure matter?" line — first matching rule wins. */
+export function resolveRangeFeel(input: GexDealerNarrativeInput): string {
+  const spot = input.stockPrice;
+  if (spot == null || spot <= 0) {
+    return "Range feel unavailable without a live spot price.";
+  }
+
+  const flipDistance = input.flipDistancePct;
+  const dte = input.dte;
+  const callDist =
+    input.callWall != null && input.callWall > 0
+      ? pctFromSpot(spot, input.callWall)
+      : null;
+  const insideWalls = isInsideWalls(spot, input.gammaFlip, input.putWall, input.callWall);
+
+  if (flipDistance != null && Math.abs(flipDistance) <= FLIP_FRAGILE_PCT) {
+    return "Very short — hugging gamma flip; regime can flip in one move or one session.";
+  }
+
+  if (callDist != null && callDist > 0 && callDist <= WALL_NEAR_PCT) {
+    return "Often hours to 1–2 days pressing the call wall — then break above or reject, not an endless hold.";
+  }
+
+  if (
+    dte != null &&
+    dte <= 0 &&
+    input.regime === "positive" &&
+    input.gammaFlip != null &&
+    spot > input.gammaFlip &&
+    input.callWall != null &&
+    spot < input.callWall
+  ) {
+    return "0DTE between flip and call wall — pinning pressure often builds in the last 1–3 hours into the close.";
+  }
+
+  if (
+    dte != null &&
+    dte >= 1 &&
+    dte <= 5 &&
+    input.regime === "positive" &&
+    insideWalls
+  ) {
+    return "1–5 DTE inside walls — range bias often lasts this session plus the next 1–2 days while spot holds above flip.";
+  }
+
+  if (
+    flipDistance != null &&
+    flipDistance >= 4 &&
+    input.regime === "positive" &&
+    dte != null &&
+    dte <= 7
+  ) {
+    return "Weekly-style book with spot well above flip — structure can matter for several sessions (often 3–7 days), but not a tight pin.";
+  }
+
+  if (input.regime === "negative") {
+    return "Usually short-lived pinning — negative gamma favors extension more than a stable range.";
+  }
+
+  if (dte != null && dte <= 0) {
+    return "0DTE — intraday structure dominates; expect the map to reset after today's close.";
+  }
+
+  if (input.regime === "positive" && insideWalls) {
+    return "Positive gamma inside walls — multi-session chop is more likely than a clean trend until a wall breaks.";
+  }
+
+  return "Structure is loose — watch flip and walls for when the range tightens or breaks.";
 }
 
 export function resolveStructureHorizon(dte: number | null | undefined): string {
@@ -100,6 +188,7 @@ export function buildGexDealerNarrative(input: GexDealerNarrativeInput): GexDeal
     return {
       summary: "Spot price unavailable — dealer read needs a live underlying.",
       bullets: [],
+      rangeFeel: "—",
       horizon: "—",
       validity: "—",
     };
@@ -154,6 +243,7 @@ export function buildGexDealerNarrative(input: GexDealerNarrativeInput): GexDeal
     summary = "Mixed gamma context — watch flip and walls for the next directional tell.";
   }
 
+  const rangeFeel = resolveRangeFeel(input);
   const horizon = resolveStructureHorizon(input.dte);
 
   let validity = "Structure resets when spot reclaims or loses key levels on volume.";
@@ -166,7 +256,7 @@ export function buildGexDealerNarrative(input: GexDealerNarrativeInput): GexDeal
           : `Regime clarifies on a sustained break of ${formatStrike(flip)}.`;
   }
 
-  return { summary, bullets, horizon, validity };
+  return { summary, bullets, rangeFeel, horizon, validity };
 }
 
 export function buildGexDealerNarrativeFromStudy(study: GexStudyResult): GexDealerNarrative {
