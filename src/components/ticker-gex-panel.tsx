@@ -1,6 +1,7 @@
 "use client";
 
 import { GexStrikeChart } from "@/components/gex-strike-chart";
+import { GexDealerRead } from "@/components/gex-dealer-read";
 import { formatMoney, formatPrice } from "@/lib/format";
 import type { GexStudyResult } from "@/lib/unusualwhales/types";
 
@@ -27,6 +28,8 @@ export function TickerGexPanel({ study }: { study: GexStudyResult }) {
         gammaFlip={study.gammaFlip}
         callWall={study.callWall}
       />
+
+      <GexDealerRead study={study} />
 
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 sm:p-5">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
