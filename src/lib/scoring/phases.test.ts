@@ -15,16 +15,27 @@ function signal(phase: SetupPhase, triggered: boolean): SignalDetail {
 }
 
 describe("derivePhase", () => {
-  it("returns 'ready' when ignition fires alongside conviction", () => {
+  it("returns 'setting-up' (Flow Without Coil) for ignition + conviction without accumulation", () => {
     const result = derivePhase([signal("ignition", true), signal("conviction", true)]);
-    expect(result.tier).toBe("ready");
-    expect(result.phase).toBe("ignition");
+    expect(result.tier).toBe("setting-up");
+    expect(result.phaseLabel).toBe("Flow Without Coil");
+    expect(result.phase).toBe("conviction");
   });
 
   it("returns 'ready' when ignition fires alongside accumulation", () => {
     expect(derivePhase([signal("ignition", true), signal("accumulation", true)]).tier).toBe(
       "ready",
     );
+  });
+
+  it("returns 'ready' when ignition + accumulation + conviction all fire", () => {
+    const result = derivePhase([
+      signal("ignition", true),
+      signal("accumulation", true),
+      signal("conviction", true),
+    ]);
+    expect(result.tier).toBe("ready");
+    expect(result.phaseLabel).toBe("Ready to Break");
   });
 
   it("returns 'setting-up' for conviction + accumulation without ignition", () => {

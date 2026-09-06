@@ -1,12 +1,19 @@
 import type { SetupPhase, SignalDetail, TickerAnalysis } from "@/lib/unusualwhales/types";
 
-export function derivePhase(signals: SignalDetail[]): {
+export interface PhaseResult {
   phase: SetupPhase;
   phaseLabel: string;
   action: string;
   holdTime: string;
   tier: TickerAnalysis["tier"];
-} {
+}
+
+/**
+ * Map triggered signal phases → setup tier.
+ * Ready requires ignition + accumulation (coil/dark pool).
+ * Flow alone near resistance is no longer enough for Ready.
+ */
+export function derivePhase(signals: SignalDetail[]): PhaseResult {
   const triggered = new Set(signals.filter((s) => s.triggered).map((s) => s.phase));
 
   const hasAccumulation = triggered.has("accumulation");
@@ -14,13 +21,26 @@ export function derivePhase(signals: SignalDetail[]): {
   const hasIgnition = triggered.has("ignition");
   const hasAmplify = triggered.has("amplify");
 
-  if (hasIgnition && (hasConviction || hasAccumulation)) {
+  // Winner path: coiled/flat + breakout level (flow optional but usual).
+  if (hasIgnition && hasAccumulation) {
     return {
       phase: "ignition",
       phaseLabel: "Ready to Break",
       action: "Swing entry on daily close above resistance with volume. Hold 3–10 days.",
       holdTime: "3–10 day swing",
       tier: "ready",
+    };
+  }
+
+  // Flow without coil — watchlist, not Ready (filters extended/flow-only chases).
+  if (hasIgnition && hasConviction && !hasAccumulation) {
+    return {
+      phase: "conviction",
+      phaseLabel: "Flow Without Coil",
+      action:
+        "Call flow is active but price is not coiled/flat. Wait for compression before entry.",
+      holdTime: "5–15 day swing",
+      tier: "setting-up",
     };
   }
 
