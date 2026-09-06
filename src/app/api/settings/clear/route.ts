@@ -1,10 +1,8 @@
-import { NextResponse } from "next/server";
 import { clearApiKeyCookie } from "@/lib/api-key-cookie";
-import { getRequestOrigin } from "@/lib/request-origin";
+import { redirectToSettings } from "@/lib/settings-redirect";
 
 export async function POST(request: Request) {
-  const origin = getRequestOrigin(request);
-  const response = NextResponse.redirect(new URL("/settings?cleared=1", origin));
+  const response = redirectToSettings(request, { cleared: "1" });
   clearApiKeyCookie(response);
   return response;
 }

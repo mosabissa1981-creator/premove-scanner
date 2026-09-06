@@ -1,10 +1,11 @@
+import { COOKIE_NAME } from "@/lib/api-key-cookie";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
 export async function GET() {
   const hasServerKey = Boolean(process.env.UNUSUAL_WHALES_API_KEY?.trim());
   const cookieStore = await cookies();
-  const hasCookie = Boolean(cookieStore.get("uw_api_key")?.value?.trim());
+  const hasCookie = Boolean(cookieStore.get(COOKIE_NAME)?.value?.trim());
 
   return NextResponse.json({
     hasServerKey,

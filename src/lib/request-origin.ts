@@ -3,21 +3,28 @@ export function getRequestOrigin(request: Request): string {
   const forwardedProto = request.headers.get("x-forwarded-proto");
 
   if (forwardedHost) {
-    const proto = forwardedProto ?? "https";
-    return `${proto}://${forwardedHost}`;
+    // Some proxies send a comma-separated list — use the first public host.
+    const host = forwardedHost.split(",")[0]?.trim();
+    const proto = (forwardedProto ?? "https").split(",")[0]?.trim() || "https";
+    if (host) return `${proto}://${host}`;
   }
 
-  const host = request.headers.get("host");
-  if (host && host !== "0.0.0.0:3000") {
+  const hostHeader = request.headers.get("host");
+  if (hostHeader && !hostHeader.startsWith("0.0.0.0")) {
+    const isLocal =
+      hostHeader.startsWith("localhost") || hostHeader.startsWith("127.0.0.1");
     const proto =
-      forwardedProto ??
-      (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
-    return `${proto}://${host}`;
+      (forwardedProto ?? "").split(",")[0]?.trim() || (isLocal ? "http" : "https");
+    return `${proto}://${hostHeader}`;
   }
 
-  const { origin, hostname } = new URL(request.url);
-  if (hostname !== "0.0.0.0") {
-    return origin;
+  try {
+    const url = new URL(request.url);
+    if (url.hostname !== "0.0.0.0") {
+      return url.origin;
+    }
+  } catch {
+    // fall through
   }
 
   return "http://localhost:3000";

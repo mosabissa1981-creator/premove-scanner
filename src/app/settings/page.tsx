@@ -2,44 +2,96 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import {
+  FormEvent,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useApiKey } from "@/lib/api-key-context";
 
 function SettingsForm() {
-  const { refreshStatus, clearApiKey, hasKey } = useApiKey();
+  const { refreshStatus, clearApiKey, setApiKey, hasKey } = useApiKey();
   const router = useRouter();
   const searchParams = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [showKey, setShowKey] = useState(true);
+  const [revealKey, setRevealKey] = useState(true);
   const [charCount, setCharCount] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [localError, setLocalError] = useState("");
+  const [localSaved, setLocalSaved] = useState(false);
 
-  const saved = searchParams.get("saved") === "1";
+  const saved = searchParams.get("saved") === "1" || localSaved;
   const cleared = searchParams.get("cleared") === "1";
   const error = searchParams.get("error");
 
   useEffect(() => {
     if (saved || cleared) {
-      refreshStatus();
+      void refreshStatus().catch(() => {
+        // Never let status refresh crash the settings page.
+      });
     }
     if (cleared) {
-      void clearApiKey();
+      void clearApiKey().catch(() => {
+        // ignore
+      });
     }
   }, [saved, cleared, refreshStatus, clearApiKey]);
 
-  const updateCount = () => {
+  const updateCount = useCallback(() => {
     const val = inputRef.current?.value ?? "";
     setCharCount(val.trim().replace(/^Bearer\s+/i, "").length);
-  };
+  }, []);
 
-  const errorMessage = (() => {
-    if (error === "empty") return "Paste your API key in the field above first.";
-    if (error === "short") {
-      const len = searchParams.get("len");
-      return `Key looks too short (${len ?? "?"} chars). Copy the full Bearer token.`;
+  const errorMessage =
+    localError ||
+    (() => {
+      if (error === "empty") return "Paste your API key in the field above first.";
+      if (error === "short") {
+        const len = searchParams.get("len");
+        return `Key looks too short (${len ?? "?"} chars). Copy the full Bearer token.`;
+      }
+      if (error === "invalid") return "Something went wrong. Try again.";
+      return "";
+    })();
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    // Prefer client save: avoids mobile blank screens from form POST → 307 redirects.
+    event.preventDefault();
+    setLocalError("");
+    setSaving(true);
+    try {
+      const value = inputRef.current?.value ?? "";
+      const result = await setApiKey(value);
+      if (!result.ok) {
+        setLocalError(result.error ?? "Failed to save API key");
+        return;
+      }
+      setLocalSaved(true);
+      await refreshStatus().catch(() => undefined);
+      router.replace("/settings?saved=1");
+    } catch {
+      setLocalError("Could not save. Check your connection and try again.");
+    } finally {
+      setSaving(false);
     }
-    if (error === "invalid") return "Something went wrong. Try again.";
-    return "";
-  })();
+  }
+
+  async function onClear(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLocalError("");
+    try {
+      await clearApiKey();
+      setLocalSaved(false);
+      if (inputRef.current) inputRef.current.value = "";
+      setCharCount(0);
+      router.replace("/settings?cleared=1");
+    } catch {
+      setLocalError("Could not clear the key. Try again.");
+    }
+  }
 
   return (
     <div className="mx-auto max-w-lg space-y-6 pb-24">
@@ -48,7 +100,6 @@ function SettingsForm() {
         <p className="mt-2 text-sm text-zinc-400">
           Paste your Unusual Whales API key, then tap Save.
         </p>
-        <p className="mt-1 text-xs text-emerald-500/80">Mobile-friendly save (no JavaScript required)</p>
       </div>
 
       {saved && (
@@ -65,7 +116,7 @@ function SettingsForm() {
         </div>
       )}
 
-      {cleared && (
+      {cleared && !saved && (
         <div className="rounded-xl border border-zinc-700 bg-zinc-900/40 px-4 py-3 text-sm text-zinc-300">
           API key cleared.
         </div>
@@ -77,10 +128,10 @@ function SettingsForm() {
         </div>
       )}
 
-      {/* Native HTML form — works on iOS Safari without JavaScript */}
       <form
         method="POST"
         action="/api/settings/save"
+        onSubmit={onSubmit}
         className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4"
       >
         <label htmlFor="api-key" className="mb-2 block text-sm font-medium text-zinc-300">
@@ -101,14 +152,16 @@ function SettingsForm() {
             autoCapitalize="off"
             spellCheck={false}
             className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3.5 pr-16 font-mono text-sm outline-none focus:border-emerald-500"
-            style={showKey ? undefined : ({ WebkitTextSecurity: "disc" } as React.CSSProperties)}
+            style={
+              revealKey ? undefined : ({ WebkitTextSecurity: "disc" } as React.CSSProperties)
+            }
           />
           <button
             type="button"
-            onClick={() => setShowKey((v) => !v)}
+            onClick={() => setRevealKey((v) => !v)}
             className="absolute right-3 top-1/2 -translate-y-1/2 rounded px-2 py-1 text-xs text-zinc-400"
           >
-            {showKey ? "Hide" : "Show"}
+            {revealKey ? "Hide" : "Show"}
           </button>
         </div>
 
@@ -126,14 +179,15 @@ function SettingsForm() {
 
         <button
           type="submit"
-          className="mt-4 w-full touch-manipulation rounded-xl bg-emerald-500 py-4 text-base font-bold text-black active:scale-[0.98]"
+          disabled={saving}
+          className="mt-4 w-full touch-manipulation rounded-xl bg-emerald-500 py-4 text-base font-bold text-black active:scale-[0.98] disabled:opacity-60"
           style={{ WebkitTapHighlightColor: "transparent" }}
         >
-          Save Key
+          {saving ? "Saving…" : "Save Key"}
         </button>
       </form>
 
-      <form method="POST" action="/api/settings/clear">
+      <form method="POST" action="/api/settings/clear" onSubmit={onClear}>
         <button
           type="submit"
           className="w-full touch-manipulation rounded-xl border border-zinc-700 py-3 text-sm text-zinc-400"
