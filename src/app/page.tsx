@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
+import { loadLastSwingScan, saveLastSwingScan } from "@/lib/last-swing-scan";
 import type { ScanResult, TickerAnalysis } from "@/lib/unusualwhales/types";
 import { TickerCard } from "@/components/ticker-ui";
 import { TickerSearch } from "@/components/ticker-search";
@@ -14,7 +15,17 @@ export default function ScannerPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
+  const [fromCache, setFromCache] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Keep last scan until user taps Find/Refresh — avoids re-burning API quota.
+  useEffect(() => {
+    const cached = loadLastSwingScan();
+    if (cached) {
+      setResult(cached);
+      setFromCache(true);
+    }
+  }, []);
 
   const runScan = useCallback(async () => {
     if (!hasKey) {
@@ -33,6 +44,8 @@ export default function ScannerPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Scan failed");
       setResult(data);
+      setFromCache(false);
+      saveLastSwingScan(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Scan failed");
     } finally {
@@ -81,7 +94,11 @@ export default function ScannerPage() {
         disabled={loading || !hasKey}
         className="w-full rounded-xl bg-emerald-500 py-4 text-base font-bold text-black transition hover:bg-emerald-400 disabled:opacity-40"
       >
-        {loading ? "Scanning swing setups…" : "Find Swing Setups"}
+        {loading
+          ? "Scanning swing setups…"
+          : result
+            ? "Refresh Swing Setups"
+            : "Find Swing Setups"}
       </button>
 
       {error && (
@@ -100,10 +117,21 @@ export default function ScannerPage() {
       {result && (
         <>
           <p className="text-center text-xs text-zinc-500">
+            {fromCache ? "Saved last scan · " : ""}
             Scanned {result.candidatesScreened} candidates
             {result.scannedAt && (
-              <> · {new Date(result.scannedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</>
+              <>
+                {" "}
+                ·{" "}
+                {new Date(result.scannedAt).toLocaleString([], {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </>
             )}
+            {fromCache && <> · tap Refresh for a new API run</>}
           </p>
 
           <div className="grid grid-cols-3 gap-2 text-center">
@@ -159,6 +187,7 @@ export default function ScannerPage() {
           <li>✅ <strong className="text-zinc-400">Ready to Swing</strong> — enter on breakout, hold 3–10 days</li>
           <li>👀 <strong className="text-zinc-400">Setting Up</strong> — watchlist, enter when it hits Ready</li>
           <li>⏳ <strong className="text-zinc-400">Early</strong> — too soon, check back daily</li>
+          <li>💾 Last scan stays on this phone until you tap Refresh</li>
           <li>🔄 Re-scan each morning — setups change as flow builds</li>
         </ul>
       </section>
