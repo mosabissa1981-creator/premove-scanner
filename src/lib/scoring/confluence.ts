@@ -17,6 +17,10 @@ import type {
 import { computeGexLevelsFromUw } from "@/lib/scoring/gex";
 import { derivePhase } from "@/lib/scoring/phases";
 import {
+  applySetupQualityFilter,
+  compareSetupQuality,
+} from "@/lib/scoring/setup-quality";
+import {
   calculateCoilMetrics,
   calculatePriceChangePct,
   getResistanceLevel,
@@ -601,7 +605,11 @@ export async function analyzeTicker(
   });
 
   const { score, maxScore, scorePct } = scoreSignals(signals);
-  const { phase, phaseLabel, action, holdTime, tier } = derivePhase(signals);
+  const phaseResult = applySetupQualityFilter(derivePhase(signals), {
+    score,
+    priceChangePct,
+  });
+  const { phase, phaseLabel, action, holdTime, tier } = phaseResult;
 
   return {
     ticker,
@@ -680,18 +688,12 @@ export async function runConfluenceScan(
     Array.from({ length: Math.min(CONCURRENCY, candidates.length) }, () => worker()),
   );
 
-  const tierOrder = { ready: 0, "setting-up": 1, early: 2, watch: 3 };
-  results.sort(
-    (a, b) =>
-      tierOrder[a.tier] - tierOrder[b.tier] ||
-      b.score - a.score ||
-      (b.inFlowAlerts && b.inCoilScreener ? 1 : 0) - (a.inFlowAlerts && a.inCoilScreener ? 1 : 0),
-  );
+  results.sort(compareSetupQuality);
 
   return {
     results,
     candidatesScreened: candidates.length,
     errors,
-    strategy: "multi-bucket-graded",
+    strategy: "multi-bucket-quality-v2",
   };
 }
