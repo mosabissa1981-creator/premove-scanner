@@ -33,8 +33,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "API key is empty" }, { status: 400 });
     }
 
+    if (apiKey.length < 20) {
+      return NextResponse.json(
+        { error: `API key too short (${apiKey.length} chars)` },
+        { status: 400 },
+      );
+    }
+
     const response = NextResponse.json({ ok: true, message: "API key saved" });
-    setApiKeyCookie(response, apiKey);
+    setApiKeyCookie(response, apiKey, { secure: true });
     return response;
   } catch {
     return NextResponse.json({ error: "Failed to save API key" }, { status: 500 });

@@ -66,7 +66,11 @@ function saveToLocalStorage(key: string) {
 }
 
 function normalizeKey(raw: string): string {
-  return raw.trim().replace(/^Bearer\s+/i, "");
+  return raw
+    .replace(/^\uFEFF/, "")
+    .replace(/^Bearer\s+/i, "")
+    .replace(/[\r\n\t\0\v\f]/g, "")
+    .trim();
 }
 
 export function ApiKeyProvider({ children }: { children: ReactNode }) {
@@ -112,6 +116,15 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
     const trimmed = normalizeKey(key);
     if (!trimmed) {
       return { ok: false, error: "Paste your API key first" };
+    }
+    if (trimmed.length < 20) {
+      return {
+        ok: false,
+        error: `Key looks too short (${trimmed.length} chars). Copy the full token.`,
+      };
+    }
+    if (/[;,]/.test(trimmed)) {
+      return { ok: false, error: "API key contains invalid characters" };
     }
 
     // Optimistic: persist locally first so scanning works immediately even if
