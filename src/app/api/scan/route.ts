@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { UnusualWhalesClient, resolveApiKey } from "@/lib/unusualwhales/client";
-import { runConfluenceScan } from "@/lib/scoring/confluence";
+import { parseScanMode, runConfluenceScan } from "@/lib/scoring/confluence";
 
 export async function GET(request: Request) {
   const cookieStore = await cookies();
@@ -21,12 +21,15 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const limit = Number(searchParams.get("limit") ?? "25");
+  const mode = parseScanMode(searchParams.get("mode"));
 
   try {
     const client = new UnusualWhalesClient(apiKey);
-    const { results, candidatesScreened, errors, strategy } = await runConfluenceScan(client, {
-      limit: Math.min(Math.max(limit, 1), 40),
-    });
+    const { results, candidatesScreened, errors, strategy, mode: scanMode } =
+      await runConfluenceScan(client, {
+        limit: Math.min(Math.max(limit, 1), 40),
+        mode,
+      });
 
     return NextResponse.json({
       scannedAt: new Date().toISOString(),
@@ -34,6 +37,7 @@ export async function GET(request: Request) {
       results,
       errors,
       strategy,
+      mode: scanMode,
     });
   } catch (err) {
     return NextResponse.json(

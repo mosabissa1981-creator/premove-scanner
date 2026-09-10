@@ -61,6 +61,8 @@ export interface ScanResult {
   results: TickerAnalysis[];
   errors: string[];
   strategy: string;
+  /** Scanner universe: swing (default) or penny (under $1). */
+  mode?: "swing" | "penny";
 }
 
 export interface UwCandle {

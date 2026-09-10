@@ -19,7 +19,7 @@ Or deploy to [Vercel](https://vercel.com) and set `UNUSUAL_WHALES_API_KEY` in pr
 
 | Feature | Route | Description |
 |---------|-------|-------------|
-| **PreMove Scanner** | `/` | Multi-signal confluence scan (coil, flow, dark pool, IV, GEX, earnings) |
+| **PreMove Scanner** | `/` | Multi-signal confluence scan (coil, flow, dark pool, IV, GEX, earnings). Toggle **Penny <$1** for sub-dollar names ready to move |
 | **GEX Scan** | `/gex-scan` | Call vs put gamma exposure ratio across a ticker list |
 | **GEX Study** | `/gex-study/[ticker]` | Per-ticker gamma exposure chart (bars + profile, walls, flip) |
 | **Scorch Hot** | `/scorch-hot` | Sector/theme heat ranked by momentum |
@@ -33,7 +33,7 @@ Or deploy to [Vercel](https://vercel.com) and set `UNUSUAL_WHALES_API_KEY` in pr
 
 | Route | Method | Purpose |
 |-------|--------|---------|
-| `/api/scan` | GET | Run PreMove confluence scan |
+| `/api/scan` | GET | Run PreMove confluence scan (`?mode=swing\|penny`, `?limit=`) |
 | `/api/gex-scan` | POST | GEX ratio scan (`{ tickers, expiry }`) |
 | `/api/gex-study` | GET | Full GEX study for one ticker |
 | `/api/ticker/[symbol]` | GET | Single-ticker analysis |

@@ -173,7 +173,7 @@ export function TickerCard({
             <span className="text-lg font-bold text-zinc-100">{analysis.ticker}</span>
             {analysis.stockPrice != null && analysis.stockPrice > 0 && (
               <span className="text-sm font-semibold tabular-nums text-zinc-300">
-                ${analysis.stockPrice.toFixed(2)}
+                ${formatStockPrice(analysis.stockPrice)}
               </span>
             )}
             <TierBadge tier={analysis.tier} label={analysis.phaseLabel} />
@@ -214,10 +214,16 @@ export function TickerCard({
         </span>
         {analysis.resistanceLevel && (
           <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400">
-            R ${analysis.resistanceLevel.toFixed(0)}
+            R ${formatStockPrice(analysis.resistanceLevel)}
           </span>
         )}
       </div>
     </button>
   );
+}
+
+function formatStockPrice(price: number): string {
+  if (price < 1) return price.toFixed(3);
+  if (price < 10) return price.toFixed(2);
+  return price.toFixed(price < 100 ? 2 : 0);
 }
