@@ -37,7 +37,7 @@ export interface CheapSetup {
   resistanceLevel: number | null;
   stopLevel: number | null;
   signals: CheapSignal[];
-  band: "under05" | "under1" | "oneToFive";
+  band: "under01" | "under05" | "under1" | "oneToFive";
 }
 
 /** Lighter entry thresholds — more names qualify as watchlist / early setups. */

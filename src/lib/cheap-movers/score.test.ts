@@ -25,10 +25,15 @@ function makeBars(closes: number[]): PriceBar[] {
 
 describe("cheap universe bands", () => {
   it("parses bands and keeps prices ≤ $5", () => {
+    expect(parseCheapBand("under01")).toBe("under01");
     expect(parseCheapBand("under05")).toBe("under05");
     expect(parseCheapBand("under1")).toBe("under1");
     expect(parseCheapBand("oneToFive")).toBe("oneToFive");
     expect(parseCheapBand(null)).toBe("all");
+    expect(priceInBand(0.003, "under01")).toBe(true);
+    expect(priceInBand(0.08, "under01")).toBe(true);
+    expect(priceInBand(0.08, "under05")).toBe(true);
+    expect(priceInBand(0.15, "under01")).toBe(false);
     expect(priceInBand(0.42, "under05")).toBe(true);
     expect(priceInBand(0.42, "under1")).toBe(true);
     expect(priceInBand(0.42, "oneToFive")).toBe(false);

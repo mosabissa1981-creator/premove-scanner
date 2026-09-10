@@ -40,7 +40,7 @@ Or deploy to [Vercel](https://vercel.com) and set `UNUSUAL_WHALES_API_KEY` in pr
 | Route | Method | Purpose |
 |-------|--------|---------|
 | `/api/scan` | GET | Run PreMove confluence scan (`?mode=swing\|penny`, `?limit=`) |
-| `/api/movers/scan` | GET | **Coil** free under-$5 scan (`?band=all\|under05\|under1\|oneToFive`) — no API key |
+| `/api/movers/scan` | GET | **Coil** free under-$5 scan (`?band=all\|under01\|under05\|under1\|oneToFive`) — no API key |
 | `/api/gex-scan` | POST | GEX ratio scan (`{ tickers, expiry }`) |
 | `/api/gex-study` | GET | Full GEX study for one ticker |
 | `/api/ticker/[symbol]` | GET | Single-ticker analysis |
