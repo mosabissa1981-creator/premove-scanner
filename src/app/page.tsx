@@ -20,10 +20,11 @@ export default function ScannerPage() {
 
   // Keep last scan until user taps Find/Refresh — avoids re-burning API quota.
   useEffect(() => {
-    const cached = loadLastSwingScan("swing");
-    setResult(cached);
-    setFromCache(Boolean(cached));
-    setError(null);
+    const cached = loadLastSwingScan();
+    if (cached) {
+      setResult(cached);
+      setFromCache(true);
+    }
   }, []);
 
   const runScan = useCallback(async () => {
@@ -36,7 +37,7 @@ export default function ScannerPage() {
     setError(null);
 
     try {
-      const res = await fetch(`/api/scan?limit=20&mode=swing`, {
+      const res = await fetch("/api/scan?limit=20", {
         headers: apiHeaders(apiKey),
         credentials: "same-origin",
       });
@@ -44,7 +45,7 @@ export default function ScannerPage() {
       if (!res.ok) throw new Error(data.error ?? "Scan failed");
       setResult(data);
       setFromCache(false);
-      saveLastSwingScan(data, "swing");
+      saveLastSwingScan(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Scan failed");
     } finally {
@@ -79,35 +80,6 @@ export default function ScannerPage() {
           <strong className="text-zinc-300">3–15 days</strong>, not scalps.
         </p>
       </section>
-
-      <div
-        className="grid grid-cols-2 gap-1 rounded-xl border border-zinc-800 bg-zinc-900/60 p-1"
-        role="tablist"
-        aria-label="Scanner mode"
-      >
-        <ModeTab
-          active
-          label="Swing"
-          hint="Needs API key"
-          onClick={() => {}}
-        />
-        <ModeTab
-          active={false}
-          label="Under $5 Free"
-          hint="No key · stocks only"
-          onClick={() => router.push("/cheap")}
-        />
-      </div>
-
-      <Link
-        href="/cheap"
-        className="block rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm"
-      >
-        <p className="font-semibold text-emerald-300">Want under $5 with no API key?</p>
-        <p className="mt-1 text-emerald-200/70">
-          Open the free Under $5 scanner — Yahoo price &amp; volume only, no options →
-        </p>
-      </Link>
 
       <section className="space-y-2">
         <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -166,10 +138,8 @@ export default function ScannerPage() {
 
           {ready.length > 0 && (
             <Section
-              title={"Ready to Swing"}
-              subtitle={
-                "Breakout zone — enter on daily close above resistance (3–10 day hold)"
-              }
+              title="Ready to Swing"
+              subtitle="Breakout zone — enter on daily close above resistance (3–10 day hold)"
               items={ready}
               onSelect={(t) => router.push(`/ticker/${t}`)}
             />
@@ -177,9 +147,7 @@ export default function ScannerPage() {
           {settingUp.length > 0 && (
             <Section
               title="Watchlist — Setting Up"
-              subtitle={
-                "Smart money loading — wait for breakout (5–15 day swing)"
-              }
+              subtitle="Smart money loading — wait for breakout (5–15 day swing)"
               items={settingUp}
               onSelect={(t) => router.push(`/ticker/${t}`)}
             />
@@ -195,7 +163,7 @@ export default function ScannerPage() {
 
           {result.results.length === 0 && (
             <p className="text-center text-sm text-zinc-500">
-              {"No strong setups right now. Try again after market open."}
+              No strong setups right now. Try again after market open.
             </p>
           )}
 
@@ -210,59 +178,24 @@ export default function ScannerPage() {
       )}
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-xs text-zinc-500">
-        <p className="font-medium text-zinc-400">
-          {"Swing trade playbook"}
-        </p>
+        <p className="font-medium text-zinc-400">Swing trade playbook</p>
         <ul className="mt-2 space-y-1.5">
-          {(
-            <>
-              <li>
-                ✅ <strong className="text-zinc-400">Ready to Swing</strong> — enter on breakout,
-                hold 3–10 days
-              </li>
-              <li>
-                👀 <strong className="text-zinc-400">Setting Up</strong> — watchlist, enter when it
-                hits Ready
-              </li>
-              <li>
-                ⏳ <strong className="text-zinc-400">Early</strong> — too soon, check back daily
-              </li>
-              <li>💾 Last scan stays on this phone until you tap Refresh</li>
-              <li>🔄 Re-scan each morning — setups change as flow builds</li>
-            </>
-          )}
+          <li>
+            ✅ <strong className="text-zinc-400">Ready to Swing</strong> — enter on breakout, hold
+            3–10 days
+          </li>
+          <li>
+            👀 <strong className="text-zinc-400">Setting Up</strong> — watchlist, enter when it hits
+            Ready
+          </li>
+          <li>
+            ⏳ <strong className="text-zinc-400">Early</strong> — too soon, check back daily
+          </li>
+          <li>💾 Last scan stays on this phone until you tap Refresh</li>
+          <li>🔄 Re-scan each morning — setups change as flow builds</li>
         </ul>
       </section>
     </div>
-  );
-}
-
-function ModeTab({
-  active,
-  label,
-  hint,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  hint: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={`rounded-lg px-3 py-2.5 text-center transition ${
-        active
-          ? "bg-emerald-500 text-black shadow-sm"
-          : "text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-200"
-      }`}
-    >
-      <div className="text-sm font-bold">{label}</div>
-      <div className={`text-[10px] ${active ? "text-black/70" : "text-zinc-500"}`}>{hint}</div>
-    </button>
   );
 }
 

@@ -19,8 +19,7 @@ Or deploy to [Vercel](https://vercel.com) and set `UNUSUAL_WHALES_API_KEY` in pr
 
 | Feature | Route | Description |
 |---------|-------|-------------|
-| **PreMove Scanner** | `/` | Multi-signal confluence scan (coil, flow, dark pool, IV, GEX, earnings). Links to free Under $5 scanner |
-| **Under $5 (free)** | `/cheap` | No API key. Yahoo price & volume only — stocks ≤ $5 (Under $1 or $1–$5) ready to move |
+| **PreMove Scanner** | `/` | Multi-signal confluence scan (coil, flow, dark pool, IV, GEX, earnings) |
 | **GEX Scan** | `/gex-scan` | Call vs put gamma exposure ratio across a ticker list |
 | **GEX Study** | `/gex-study/[ticker]` | Per-ticker gamma exposure chart (bars + profile, walls, flip) |
 | **Scorch Hot** | `/scorch-hot` | Sector/theme heat ranked by momentum |
@@ -30,12 +29,18 @@ Or deploy to [Vercel](https://vercel.com) and set `UNUSUAL_WHALES_API_KEY` in pr
 | **Settings** | `/settings` | API key (cookie + localStorage) |
 | **Mobile setup** | `/setup.html` | Plain HTML key entry for iPhone |
 
+### Separate app (not PreMove)
+
+| App | Route | Description |
+|-----|-------|-------------|
+| **Coil** | `/movers` | Standalone free under-$5 stock scanner (Yahoo price/volume only). No PreMove UI, no API key, no options. |
+
 ## API routes
 
 | Route | Method | Purpose |
 |-------|--------|---------|
 | `/api/scan` | GET | Run PreMove confluence scan (`?mode=swing\|penny`, `?limit=`) |
-| `/api/cheap-scan` | GET | Free under-$5 scan via Yahoo (`?band=all\|under1\|oneToFive`) — no API key |
+| `/api/movers/scan` | GET | **Coil** free under-$5 scan (`?band=all\|under1\|oneToFive`) — no API key |
 | `/api/gex-scan` | POST | GEX ratio scan (`{ tickers, expiry }`) |
 | `/api/gex-study` | GET | Full GEX study for one ticker |
 | `/api/ticker/[symbol]` | GET | Single-ticker analysis |
