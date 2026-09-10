@@ -99,6 +99,33 @@
   line-height: 1.5;
 }
 
+.coil-views {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  margin-top: 1.15rem;
+  padding: 0.3rem;
+  border: 1px solid var(--coil-line);
+  border-radius: 0.9rem;
+  background: var(--coil-panel);
+}
+
+.coil-view {
+  border: 0;
+  border-radius: 0.7rem;
+  padding: 0.7rem 0.4rem;
+  background: transparent;
+  color: var(--coil-muted);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.coil-view[aria-selected="true"] {
+  background: var(--coil-accent);
+  color: #04140c;
+}
+
 .coil-bands {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -278,6 +305,70 @@
 .coil-score-sub {
   font-size: 0.65rem;
   color: var(--coil-muted);
+}
+
+.coil-save {
+  margin-top: 0.55rem;
+  border: 1px solid var(--coil-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--coil-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+}
+
+.coil-save.on {
+  border-color: rgba(61, 214, 140, 0.45);
+  background: var(--coil-accent-dim);
+  color: var(--coil-accent);
+}
+
+.coil-add-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+
+.coil-input {
+  border: 1px solid var(--coil-line);
+  border-radius: 0.7rem;
+  background: var(--coil-panel);
+  color: var(--coil-text);
+  padding: 0.7rem 0.8rem;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.coil-input:focus {
+  border-color: rgba(61, 214, 140, 0.55);
+}
+
+.coil-add-btn {
+  border: 0;
+  border-radius: 0.7rem;
+  background: var(--coil-accent);
+  color: #04140c;
+  font-weight: 700;
+  padding: 0 1rem;
+  cursor: pointer;
+}
+
+.coil-watch-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.55rem;
+}
+
+.coil-text-btn {
+  border: 0;
+  background: transparent;
+  color: var(--coil-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .coil-chips {

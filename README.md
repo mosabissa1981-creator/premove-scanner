@@ -33,7 +33,7 @@ Or deploy to [Vercel](https://vercel.com) and set `UNUSUAL_WHALES_API_KEY` in pr
 
 | App | Route | Description |
 |-----|-------|-------------|
-| **Coil** | `/movers` | Standalone free under-$5 stock scanner (Yahoo price/volume only). No PreMove UI, no API key, no options. |
+| **Coil** | `/movers` | Standalone free under-$5 stock scanner (Yahoo price/volume only). Local watchlist. No PreMove UI, no API key, no options. |
 
 ## API routes
 
