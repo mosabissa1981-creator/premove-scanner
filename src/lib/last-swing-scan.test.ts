@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ScanResult } from "@/lib/unusualwhales/types";
 import {
   LAST_SCAN_STORAGE_KEY,
+  LAST_PENNY_SCAN_STORAGE_KEY,
   clearLastSwingScan,
   loadLastSwingScan,
   saveLastSwingScan,
@@ -78,5 +79,15 @@ describe("last-swing-scan cache", () => {
     saveLastSwingScan(sampleScan);
     clearLastSwingScan();
     expect(loadLastSwingScan()).toBeNull();
+  });
+
+  it("stores swing and penny scans in separate keys", () => {
+    const pennyScan = { ...sampleScan, strategy: "penny-under-1-v1", mode: "penny" as const };
+    saveLastSwingScan(sampleScan, "swing");
+    saveLastSwingScan(pennyScan, "penny");
+    expect(loadLastSwingScan("swing")).toEqual(sampleScan);
+    expect(loadLastSwingScan("penny")).toEqual(pennyScan);
+    expect(store.has(LAST_SCAN_STORAGE_KEY)).toBe(true);
+    expect(store.has(LAST_PENNY_SCAN_STORAGE_KEY)).toBe(true);
   });
 });

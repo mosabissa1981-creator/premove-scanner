@@ -30,6 +30,16 @@ import {
 } from "@/lib/scoring/technical";
 import { clamp01, gradedFactor, ramp } from "@/lib/scoring/util";
 import { daysUntilEarnings, isEarningsSoon } from "@/lib/scoring/earnings";
+import {
+  isPennyPrice,
+  parseScanMode,
+  SCAN_MODE_CONFIG,
+  type ScanMode,
+  type ScanModeConfig,
+} from "@/lib/scoring/scan-mode";
+
+export type { ScanMode } from "@/lib/scoring/scan-mode";
+export { parseScanMode, SCAN_MODE_CONFIG, isPennyPrice } from "@/lib/scoring/scan-mode";
 
 function parseNum(value: string | number | undefined): number {
   if (value === undefined) return 0;
@@ -62,17 +72,20 @@ function relativeVolume(row: UwStockScreenerRow): number | null {
   return vol / avg;
 }
 
-function hasAggressiveFlow(alerts: UwFlowAlert[]): boolean {
+function hasAggressiveFlow(alerts: UwFlowAlert[], minPremium: number): boolean {
   return alerts.some((a) => {
     const premium = parseNum(a.total_premium);
     const isCall = a.type?.toLowerCase() === "call";
-    return premium >= 100_000 && a.has_sweep && isCall;
+    return premium >= minPremium && a.has_sweep && isCall;
   });
 }
 
-function darkPoolBaselineForPrice(stockPrice: number): number {
+/** Exported for unit tests — dark-pool "elevated" baseline by price tier. */
+export function darkPoolBaselineForPrice(stockPrice: number): number {
   if (stockPrice <= 0) return 5_000_000;
   // Scale baseline by price tier — avoids small caps always triggering
+  if (stockPrice < 1) return 50_000;
+  if (stockPrice < 5) return 100_000;
   if (stockPrice < 20) return 500_000;
   if (stockPrice < 50) return 1_500_000;
   if (stockPrice < 150) return 3_000_000;
@@ -101,13 +114,16 @@ export function buildSignals(input: {
   bullishNetFlow: boolean;
   inFlowAlerts: boolean;
   earningsSoon: boolean;
+  /** Minimum total premium for bullish-flow signal (penny mode uses a lower bar). */
+  minBullishPremium?: number;
 }): SignalDetail[] {
+  const minBullishPremium = input.minBullishPremium ?? 250_000;
   const priceIsFlat = Math.abs(input.priceChangePct) < 3;
   const coilTight = input.coilScore >= 65;
   const darkPoolRatio =
     input.darkPoolBaseline > 0 ? input.darkPoolNotional / input.darkPoolBaseline : 0;
   const darkPoolElevated = darkPoolRatio > 1.5;
-  const bullishFlow = input.premiumRatio < 0.85 && input.premium >= 250_000;
+  const bullishFlow = input.premiumRatio < 0.85 && input.premium >= minBullishPremium;
   const ivRisingFlat = input.ivRank !== null && input.ivRank >= 55 && priceIsFlat;
   const approachingFlip =
     input.gexFlipDistance !== null && Math.abs(input.gexFlipDistance) <= 2;
@@ -344,29 +360,36 @@ function candidateFromFlowAlert(alert: UwFlowAlert, sources: string[] = ["flow"]
 export async function resolveCandidateForTicker(
   client: UnusualWhalesClient,
   ticker: string,
-  opts: { date?: string } = {},
+  opts: { date?: string; mode?: ScanMode } = {},
 ): Promise<CandidateMeta> {
   const upper = ticker.toUpperCase();
   const { date } = opts;
+  const mode = parseScanMode(opts.mode);
+  const cfg = SCAN_MODE_CONFIG[mode];
+  const priceFilter = screenerPriceParams(cfg);
 
   const [flatCallRes, oiChangeRes, flowRes, volRes, overviewRes] = await Promise.all([
     client.stockScreener({
       ticker: upper,
       min_change: "-2",
       max_change: "2",
-      min_net_call_premium: "250000",
+      min_net_call_premium: cfg.minNetCallPremium,
       date,
+      ...priceFilter,
     }) as Promise<UwDataResponse<UwStockScreenerRow[]>>,
     client.stockScreener({
       ticker: upper,
       min_change: "-3",
       max_change: "3",
-      min_total_oi_change_perc: "5",
+      min_total_oi_change_perc: cfg.minOiChangePerc,
       date,
+      ...priceFilter,
     }) as Promise<UwDataResponse<UwStockScreenerRow[]>>,
     client.tickerFlowAlerts(upper, 15) as Promise<UwDataResponse<UwFlowAlert[]>>,
     client.optionsVolume(upper) as Promise<UwDataResponse<UwOptionsVolume[]>>,
-    client.stockScreener({ ticker: upper, date }) as Promise<UwDataResponse<UwStockScreenerRow[]>>,
+    client.stockScreener({ ticker: upper, date, ...priceFilter }) as Promise<
+      UwDataResponse<UwStockScreenerRow[]>
+    >,
   ]);
 
   const sources: string[] = [];
@@ -374,7 +397,7 @@ export async function resolveCandidateForTicker(
   if (screenerRowForTicker(oiChangeRes.data, upper)) sources.push("oi-change");
 
   const flowAlerts = flowRes.data ?? [];
-  const inFlowAlerts = flowAlerts.some((a) => parseNum(a.total_premium) >= 100_000);
+  const inFlowAlerts = flowAlerts.some((a) => parseNum(a.total_premium) >= cfg.minFlowPremium);
   if (inFlowAlerts) sources.push("flow");
 
   const row =
@@ -420,14 +443,22 @@ export async function resolveCandidateForTicker(
   };
 }
 
+function screenerPriceParams(cfg: ScanModeConfig): Record<string, string | undefined> {
+  return {
+    max_underlying_price: cfg.maxUnderlyingPrice,
+    min_underlying_price: cfg.minUnderlyingPrice,
+    ...(cfg.issueTypes ? { "issue_types[]": cfg.issueTypes } : {}),
+  };
+}
+
 /** Single-ticker entry point — same candidate resolution + analysis as the landing scan. */
 export async function runTickerAnalysis(
   client: UnusualWhalesClient,
   ticker: string,
-  opts: { date?: string } = {},
+  opts: { date?: string; mode?: ScanMode } = {},
 ): Promise<TickerAnalysis> {
   const candidate = await resolveCandidateForTicker(client, ticker, opts);
-  return analyzeTicker(client, candidate);
+  return analyzeTicker(client, candidate, { mode: opts.mode });
 }
 
 /** Discovery rank — how promising a candidate is before deep analysis. */
@@ -444,34 +475,58 @@ export function discoveryRank(c: CandidateMeta): number {
 export async function discoverCandidates(
   client: UnusualWhalesClient,
   limit: number,
-  opts: { date?: string } = {},
+  opts: { date?: string; mode?: ScanMode } = {},
 ): Promise<CandidateMeta[]> {
   const { date } = opts;
+  const mode = parseScanMode(opts.mode);
+  const cfg = SCAN_MODE_CONFIG[mode];
+  const priceFilter = screenerPriceParams(cfg);
 
-  const [flatCallRes, oiChangeRes, flowRes] = await Promise.all([
+  const screenerJobs: Promise<UwDataResponse<UwStockScreenerRow[]>>[] = [
     // Bucket A: flat price + strong net call premium (hidden bullish flow).
     client.stockScreener({
       min_change: "-2",
       max_change: "2",
-      min_net_call_premium: "250000",
+      min_net_call_premium: cfg.minNetCallPremium,
       order: "net_call_premium",
       order_direction: "desc",
       date,
+      ...priceFilter,
     }) as Promise<UwDataResponse<UwStockScreenerRow[]>>,
-    // Bucket B: flat price + rising open interest (quiet positioning that raw
-    // premium screens miss — closer to the "before the move" thesis).
+    // Bucket B: flat price + rising open interest (quiet positioning).
     client.stockScreener({
       min_change: "-3",
       max_change: "3",
-      min_total_oi_change_perc: "5",
+      min_total_oi_change_perc: cfg.minOiChangePerc,
       order: "total_oi_change_perc",
       order_direction: "desc",
       date,
+      ...priceFilter,
     }) as Promise<UwDataResponse<UwStockScreenerRow[]>>,
+  ];
+
+  // Bucket C (penny): relative volume heat — sub-$1 names often tip via stock
+  // volume before options premium shows up on the big-cap screens.
+  const volumeJob = cfg.minStockVolumeVsAvg30
+    ? (client.stockScreener({
+        min_change: "-5",
+        max_change: "5",
+        min_stock_volume_vs_avg30_volume: cfg.minStockVolumeVsAvg30,
+        order: "volume",
+        order_direction: "desc",
+        date,
+        ...priceFilter,
+      }) as Promise<UwDataResponse<UwStockScreenerRow[]>>)
+    : Promise.resolve({ data: [] as UwStockScreenerRow[] });
+
+  const [flatCallRes, oiChangeRes, volumeRes, flowRes] = await Promise.all([
+    screenerJobs[0],
+    screenerJobs[1],
+    volumeJob,
     client.flowAlerts({
       unusual: true,
       is_ask_side: true,
-      min_premium: 100000,
+      min_premium: cfg.minFlowPremium,
       limit: 200,
     }) as Promise<UwDataResponse<UwFlowAlert[]>>,
   ]);
@@ -479,6 +534,9 @@ export async function discoverCandidates(
   const merged = new Map<string, CandidateMeta>();
 
   function mergeScreenerRow(row: UwStockScreenerRow, source: string) {
+    const price = parseNum(row.close);
+    if (mode === "penny" && !isPennyPrice(price)) return;
+
     const existing = merged.get(row.ticker);
     if (existing) {
       existing.sources = existing.sources ?? [];
@@ -488,6 +546,7 @@ export async function discoverCandidates(
       existing.oiChangePerc = existing.oiChangePerc ?? optionalNum(row.total_oi_change_perc);
       existing.relativeVolume = existing.relativeVolume ?? relativeVolume(row);
       existing.week52High = existing.week52High ?? optionalNum(row.week_52_high);
+      if (!existing.stockPrice) existing.stockPrice = price;
       return;
     }
     merged.set(row.ticker, screenerToCandidate(row, source));
@@ -495,11 +554,15 @@ export async function discoverCandidates(
 
   for (const row of flatCallRes.data ?? []) mergeScreenerRow(row, "flat-call");
   for (const row of oiChangeRes.data ?? []) mergeScreenerRow(row, "oi-change");
+  for (const row of volumeRes.data ?? []) mergeScreenerRow(row, "rel-volume");
 
   const flowTickers = new Set<string>();
   for (const alert of flowRes.data ?? []) {
     if (flowTickers.has(alert.ticker)) continue;
     flowTickers.add(alert.ticker);
+
+    const alertPrice = parseNum(alert.underlying_price);
+    if (mode === "penny" && !isPennyPrice(alertPrice)) continue;
 
     const existing = merged.get(alert.ticker);
     if (existing) {
@@ -524,8 +587,11 @@ export async function discoverCandidates(
 export async function analyzeTicker(
   client: UnusualWhalesClient,
   candidate: CandidateMeta,
+  opts: { mode?: ScanMode } = {},
 ): Promise<TickerAnalysis> {
   const { ticker, entry } = candidate;
+  const mode = parseScanMode(opts.mode);
+  const cfg = SCAN_MODE_CONFIG[mode];
 
   const [ohlcRes, darkRes, gexRes, ivRes] = await Promise.all([
     client.ohlc(ticker, "1d", 30) as Promise<UwDataResponse<UwCandle[]>>,
@@ -571,10 +637,10 @@ export async function analyzeTicker(
   const darkPoolBaseline = darkPoolBaselineForPrice(stockPrice);
   const gex = gexRes.data ? computeGexLevelsFromUw(gexRes.data, stockPrice) : null;
   const ivRank = computeIvRank(ivRes.data ?? []);
-  const aggressiveFlow = hasAggressiveFlow(flowAlerts);
+  const aggressiveFlow = hasAggressiveFlow(flowAlerts, cfg.minAggressivePremium);
   const inFlowAlerts =
     candidate.inFlowAlerts ||
-    flowAlerts.some((a) => parseNum(a.total_premium) >= 100_000);
+    flowAlerts.some((a) => parseNum(a.total_premium) >= cfg.minFlowPremium);
   const inCoilScreener =
     candidate.inCoilScreener || (coilScore >= 65 && Math.abs(priceChangePct) < 3);
 
@@ -602,6 +668,7 @@ export async function analyzeTicker(
     bullishNetFlow,
     inFlowAlerts,
     earningsSoon,
+    minBullishPremium: cfg.minBullishPremium,
   });
 
   const { score, maxScore, scorePct } = scoreSignals(signals);
@@ -647,15 +714,18 @@ export async function analyzeTicker(
 
 export async function runConfluenceScan(
   client: UnusualWhalesClient,
-  options: { limit?: number } = {},
+  options: { limit?: number; mode?: ScanMode } = {},
 ): Promise<{
   results: TickerAnalysis[];
   candidatesScreened: number;
   errors: string[];
   strategy: string;
+  mode: ScanMode;
 }> {
   const limit = options.limit ?? 25;
-  const candidates = await discoverCandidates(client, limit);
+  const mode = parseScanMode(options.mode);
+  const cfg = SCAN_MODE_CONFIG[mode];
+  const candidates = await discoverCandidates(client, limit, { mode });
 
   const results: TickerAnalysis[] = [];
   const errors: string[] = [];
@@ -672,7 +742,11 @@ export async function runConfluenceScan(
       const candidate = candidates[cursor];
       cursor += 1;
       try {
-        const analysis = await analyzeTicker(client, candidate);
+        const analysis = await analyzeTicker(client, candidate, { mode });
+        // Penny mode: drop anything that drifted above $1 after deep analysis.
+        if (mode === "penny" && !isPennyPrice(analysis.stockPrice ?? 0)) {
+          continue;
+        }
         if (analysis.tier !== "watch" || analysis.score >= 3) {
           results.push(analysis);
         }
@@ -694,6 +768,7 @@ export async function runConfluenceScan(
     results,
     candidatesScreened: candidates.length,
     errors,
-    strategy: "multi-bucket-quality-v2",
+    strategy: cfg.strategy,
+    mode,
   };
 }

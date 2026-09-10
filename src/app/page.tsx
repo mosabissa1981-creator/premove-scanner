@@ -76,8 +76,8 @@ export default function ScannerPage() {
       <section>
         <h1 className="text-xl font-bold">Swing Trade Setups</h1>
         <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-          Multi-day swing candidates — flat price + hidden flow before the move.
-          Hold <strong className="text-zinc-300">3–15 days</strong>, not scalps.
+          Multi-day swing candidates — flat price + hidden flow before the move. Hold{" "}
+          <strong className="text-zinc-300">3–15 days</strong>, not scalps.
         </p>
       </section>
 
@@ -94,11 +94,7 @@ export default function ScannerPage() {
         disabled={loading || !hasKey}
         className="w-full rounded-xl bg-emerald-500 py-4 text-base font-bold text-black transition hover:bg-emerald-400 disabled:opacity-40"
       >
-        {loading
-          ? "Scanning swing setups…"
-          : result
-            ? "Refresh Swing Setups"
-            : "Find Swing Setups"}
+        {loading ? "Scanning swing setups…" : result ? "Refresh Swing Setups" : "Find Swing Setups"}
       </button>
 
       {error && (
@@ -184,9 +180,17 @@ export default function ScannerPage() {
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-xs text-zinc-500">
         <p className="font-medium text-zinc-400">Swing trade playbook</p>
         <ul className="mt-2 space-y-1.5">
-          <li>✅ <strong className="text-zinc-400">Ready to Swing</strong> — enter on breakout, hold 3–10 days</li>
-          <li>👀 <strong className="text-zinc-400">Setting Up</strong> — watchlist, enter when it hits Ready</li>
-          <li>⏳ <strong className="text-zinc-400">Early</strong> — too soon, check back daily</li>
+          <li>
+            ✅ <strong className="text-zinc-400">Ready to Swing</strong> — enter on breakout, hold
+            3–10 days
+          </li>
+          <li>
+            👀 <strong className="text-zinc-400">Setting Up</strong> — watchlist, enter when it hits
+            Ready
+          </li>
+          <li>
+            ⏳ <strong className="text-zinc-400">Early</strong> — too soon, check back daily
+          </li>
           <li>💾 Last scan stays on this phone until you tap Refresh</li>
           <li>🔄 Re-scan each morning — setups change as flow builds</li>
         </ul>

@@ -29,11 +29,18 @@ Or deploy to [Vercel](https://vercel.com) and set `UNUSUAL_WHALES_API_KEY` in pr
 | **Settings** | `/settings` | API key (cookie + localStorage) |
 | **Mobile setup** | `/setup.html` | Plain HTML key entry for iPhone |
 
+### Separate app (not PreMove)
+
+| App | Route | Description |
+|-----|-------|-------------|
+| **Coil** | `/movers` | Standalone free under-$5 stock scanner (Yahoo price/volume only). No PreMove UI, no API key, no options. |
+
 ## API routes
 
 | Route | Method | Purpose |
 |-------|--------|---------|
-| `/api/scan` | GET | Run PreMove confluence scan |
+| `/api/scan` | GET | Run PreMove confluence scan (`?mode=swing\|penny`, `?limit=`) |
+| `/api/movers/scan` | GET | **Coil** free under-$5 scan (`?band=all\|under1\|oneToFive`) — no API key |
 | `/api/gex-scan` | POST | GEX ratio scan (`{ tickers, expiry }`) |
 | `/api/gex-study` | GET | Full GEX study for one ticker |
 | `/api/ticker/[symbol]` | GET | Single-ticker analysis |

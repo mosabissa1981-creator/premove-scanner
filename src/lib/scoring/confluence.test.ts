@@ -4,6 +4,8 @@ import {
   scoreSignals,
   discoveryRank,
   resolveCandidateForTicker,
+  discoverCandidates,
+  darkPoolBaselineForPrice,
 } from "@/lib/scoring/confluence";
 import type { CandidateMeta, SignalDetail } from "@/lib/unusualwhales/types";
 
@@ -164,5 +166,125 @@ describe("resolveCandidateForTicker", () => {
     expect(candidate.inCoilScreener).toBe(true);
     expect(candidate.inFlowAlerts).toBe(true);
     expect(candidate.entry.premium).toBeGreaterThan(0);
+  });
+});
+
+describe("darkPoolBaselineForPrice", () => {
+  it("uses a lower baseline for sub-$1 names", () => {
+    expect(darkPoolBaselineForPrice(0.5)).toBe(50_000);
+    expect(darkPoolBaselineForPrice(3)).toBe(100_000);
+    expect(darkPoolBaselineForPrice(15)).toBe(500_000);
+  });
+});
+
+describe("buildSignals penny thresholds", () => {
+  it("fires bullish flow at the lowered penny premium bar", () => {
+    const swing = byId(
+      buildSignals(strongSetup({ premium: 40_000, premiumRatio: 0.5, aggressiveFlow: false, inFlowAlerts: false })),
+      "flow",
+    );
+    expect(swing.triggered).toBe(false);
+
+    const penny = byId(
+      buildSignals(
+        strongSetup({
+          premium: 40_000,
+          premiumRatio: 0.5,
+          aggressiveFlow: false,
+          inFlowAlerts: false,
+          minBullishPremium: 25_000,
+        }),
+      ),
+      "flow",
+    );
+    expect(penny.triggered).toBe(true);
+  });
+});
+
+describe("discoverCandidates penny mode", () => {
+  it("keeps only sub-$1 names and passes penny screener filters", async () => {
+    const calls: Record<string, string | number | boolean | undefined>[] = [];
+    const client = {
+      stockScreener: async (params: Record<string, string | number | boolean | undefined>) => {
+        calls.push(params);
+        if (params.min_net_call_premium) {
+          return {
+            data: [
+              {
+                ticker: "PENY",
+                close: "0.42",
+                bullish_premium: "40000",
+                bearish_premium: "10000",
+                call_premium: "30000",
+                put_premium: "5000",
+                total_oi_change_perc: "12",
+                volume: "2000000",
+                avg_30_day_volume: "500000",
+              },
+              {
+                ticker: "EXPENSIVE",
+                close: "24.50",
+                bullish_premium: "400000",
+                bearish_premium: "100000",
+                call_premium: "300000",
+                put_premium: "50000",
+              },
+            ],
+          };
+        }
+        if (params.min_stock_volume_vs_avg30_volume) {
+          return {
+            data: [
+              {
+                ticker: "VOLY",
+                close: "0.88",
+                bullish_premium: "5000",
+                bearish_premium: "2000",
+                call_premium: "4000",
+                put_premium: "1000",
+                volume: "5000000",
+                avg_30_day_volume: "1000000",
+              },
+            ],
+          };
+        }
+        return { data: [] };
+      },
+      flowAlerts: async () => ({
+        data: [
+          {
+            ticker: "FLOWP",
+            type: "call",
+            total_premium: "20000",
+            total_ask_side_prem: "18000",
+            total_bid_side_prem: "2000",
+            has_sweep: true,
+            underlying_price: "0.55",
+          },
+          {
+            ticker: "SPY",
+            type: "call",
+            total_premium: "500000",
+            total_ask_side_prem: "400000",
+            total_bid_side_prem: "100000",
+            has_sweep: true,
+            underlying_price: "450",
+          },
+        ],
+      }),
+    };
+
+    const candidates = await discoverCandidates(client as never, 20, { mode: "penny" });
+    const tickers = candidates.map((c) => c.ticker);
+
+    expect(tickers).toContain("PENY");
+    expect(tickers).toContain("VOLY");
+    expect(tickers).toContain("FLOWP");
+    expect(tickers).not.toContain("EXPENSIVE");
+    expect(tickers).not.toContain("SPY");
+
+    expect(calls.some((p) => p.max_underlying_price === "1")).toBe(true);
+    expect(calls.some((p) => p.min_net_call_premium === "10000")).toBe(true);
+    expect(calls.some((p) => p.min_stock_volume_vs_avg30_volume === "1.5")).toBe(true);
   });
 });
