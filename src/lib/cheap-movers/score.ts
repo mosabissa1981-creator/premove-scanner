@@ -3,7 +3,6 @@ import {
   calculatePriceChangePct,
   getResistanceLevel,
   getSwingStop,
-  isNearResistance,
   type PriceBar,
 } from "@/lib/scoring/technical";
 import { clamp01, gradedFactor, ramp } from "@/lib/scoring/util";
@@ -40,6 +39,28 @@ export interface CheapSetup {
   band: "under1" | "oneToFive";
 }
 
+/** Lighter entry thresholds — more names qualify as watchlist / early setups. */
+export const COIL_LIGHT = {
+  coilMin: 45,
+  volumeHeatMin: 1.15,
+  volumeSurgeMin: 1.8,
+  /** Max |~3mo| move still treated as "quiet enough". */
+  quietMovePct: 22,
+  /** Max 1d move still allowed for volume / breakout signals. */
+  spikeMaxPct: 12,
+  /** Quiet-base window. */
+  baseMovePct: 12,
+  /** Distance under prior high that still counts as near breakout. */
+  nearResistancePct: 5,
+  /** Hard skips only for very extended runners. */
+  skipExtendedPct: 65,
+  skipDaySpikePct: 25,
+  /** Drop only the weakest leftovers. */
+  dropBelowScorePct: 8,
+  readyMinScorePct: 35,
+  settingUpMinScorePct: 20,
+} as const;
+
 function average(nums: number[]): number {
   if (nums.length === 0) return 0;
   return nums.reduce((a, b) => a + b, 0) / nums.length;
@@ -63,6 +84,21 @@ export function calcChange1dPct(bars: PriceBar[]): number {
   return ((last - prev) / prev) * 100;
 }
 
+/** Within `maxPct` under the prior 10-day high (looser than the shared 2% helper). */
+export function isNearResistanceLoose(
+  bars: PriceBar[],
+  maxPct = COIL_LIGHT.nearResistancePct,
+): boolean {
+  if (bars.length < 11) return false;
+  const prior = bars.slice(-11, -1);
+  const resistance = Math.max(...prior.map((b) => b.highPrice));
+  const current = bars[bars.length - 1].closePrice;
+  if (resistance <= 0) return false;
+  const distancePct = ((resistance - current) / resistance) * 100;
+  // Allow a touch slightly through the high (up to 1%).
+  return distancePct <= maxPct && distancePct >= -1;
+}
+
 export function buildCheapSignals(input: {
   coilScore: number;
   bandWidthPct: number;
@@ -71,29 +107,33 @@ export function buildCheapSignals(input: {
   relativeVolume: number | null;
   nearResistance: boolean;
 }): CheapSignal[] {
-  const priceQuiet = Math.abs(input.priceChangePct) < 12;
-  const notSpiking = Math.abs(input.change1dPct) < 8;
-  const coilTight = input.coilScore >= 60;
+  const priceQuiet = Math.abs(input.priceChangePct) < COIL_LIGHT.quietMovePct;
+  const notSpiking = Math.abs(input.change1dPct) < COIL_LIGHT.spikeMaxPct;
+  const coilTight = input.coilScore >= COIL_LIGHT.coilMin;
   const rvol = input.relativeVolume ?? 0;
-  const volumeHeat = rvol >= 1.5;
-  const volumeSurge = rvol >= 2.5;
+  const volumeHeat = rvol >= COIL_LIGHT.volumeHeatMin;
+  const volumeSurge = rvol >= COIL_LIGHT.volumeSurgeMin;
 
-  const coilTriggered = coilTight && priceQuiet;
-  const coilStrength = coilTriggered ? gradedFactor(ramp(input.coilScore, 60, 90)) : 0;
+  // Coil can fire on compression alone — price doesn't need to be perfectly flat.
+  const coilTriggered = coilTight;
+  const coilStrength = coilTriggered
+    ? gradedFactor(ramp(input.coilScore, COIL_LIGHT.coilMin, 85))
+    : 0;
 
+  // Volume heat no longer requires a dead-flat day — only block big spikes.
   const volTriggered = volumeHeat && notSpiking;
   const volStrength = volTriggered
     ? volumeSurge
       ? 1
-      : gradedFactor(ramp(rvol, 1.5, 4))
+      : gradedFactor(ramp(rvol, COIL_LIGHT.volumeHeatMin, 3.5))
     : 0;
 
   const techTriggered = input.nearResistance && notSpiking;
   const techStrength = techTriggered ? 1 : 0;
 
-  const baseTriggered = priceQuiet && Math.abs(input.priceChangePct) < 6;
+  const baseTriggered = priceQuiet && Math.abs(input.priceChangePct) < COIL_LIGHT.baseMovePct;
   const baseStrength = baseTriggered
-    ? gradedFactor(1 - clamp01(Math.abs(input.priceChangePct) / 6))
+    ? gradedFactor(1 - clamp01(Math.abs(input.priceChangePct) / COIL_LIGHT.baseMovePct))
     : 0;
 
   return [
@@ -113,7 +153,7 @@ export function buildCheapSignals(input: {
         input.relativeVolume === null
           ? "Volume data unavailable"
           : volumeHeat
-            ? `${input.relativeVolume.toFixed(1)}× average volume while price calm`
+            ? `${input.relativeVolume.toFixed(1)}× average volume`
             : `${input.relativeVolume.toFixed(1)}× average volume — not hot yet`,
     },
     {
@@ -122,7 +162,7 @@ export function buildCheapSignals(input: {
       triggered: techTriggered,
       strength: techStrength,
       description: techTriggered
-        ? "Within 2% of recent high — breakout zone"
+        ? `Within ${COIL_LIGHT.nearResistancePct}% of recent high — breakout zone`
         : "Not pressing resistance yet",
     },
     {
@@ -169,28 +209,42 @@ export function deriveCheapTier(
   const volume = byId.volume?.triggered ?? false;
   const breakout = byId.breakout?.triggered ?? false;
   const base = byId.base?.triggered ?? false;
+  const hits = [coil, volume, breakout].filter(Boolean).length;
 
-  if (coil && volume && breakout && scorePct >= 55) {
+  // Ready: any 2 of coil/volume/breakout at a moderate score — not all three.
+  if (hits >= 2 && scorePct >= COIL_LIGHT.readyMinScorePct) {
     return {
       tier: "ready",
       tierLabel: "Ready to Move",
-      action: "Coiled + volume + near breakout — watch for a daily close above resistance",
+      action: "Setup is live — watch for a daily close above resistance for entry",
     };
   }
-  if ((coil && volume) || (coil && breakout) || (volume && breakout && base)) {
+
+  // Setting up: one strong signal + base, or coil/volume alone with some score.
+  if (
+    (coil && volume) ||
+    (coil && breakout) ||
+    (volume && breakout) ||
+    (coil && base) ||
+    (volume && base) ||
+    (breakout && base) ||
+    (hits >= 1 && scorePct >= COIL_LIGHT.settingUpMinScorePct)
+  ) {
     return {
       tier: "setting-up",
       tierLabel: "Setting Up",
       action: "Building heat — add to watchlist, wait for breakout confirmation",
     };
   }
-  if (coil || volume || base) {
+
+  if (coil || volume || base || breakout || scorePct >= COIL_LIGHT.dropBelowScorePct) {
     return {
       tier: "early",
       tierLabel: "Early",
-      action: "Early accumulation — monitor daily, no chase yet",
+      action: "Early accumulation — monitor daily, size small if you enter",
     };
   }
+
   return {
     tier: "watch",
     tierLabel: "Watch",
@@ -212,11 +266,13 @@ export function scoreCheapSeries(input: {
   const priceChangePct = calculatePriceChangePct(bars);
   const dayChange = calcChange1dPct(bars);
   const rvol = calcRelativeVolume(volumes);
-  const nearRes = isNearResistance(bars);
+  const nearRes = isNearResistanceLoose(bars);
   const resistanceLevel = getResistanceLevel(bars);
   const stopLevel = getSwingStop(bars);
 
-  if (priceChangePct > 40 || dayChange > 15) return null;
+  if (priceChangePct > COIL_LIGHT.skipExtendedPct || dayChange > COIL_LIGHT.skipDaySpikePct) {
+    return null;
+  }
 
   const signals = buildCheapSignals({
     coilScore,
@@ -229,7 +285,7 @@ export function scoreCheapSeries(input: {
   const { score, maxScore, scorePct } = scoreCheapSignals(signals);
   const tierInfo = deriveCheapTier(signals, scorePct);
 
-  if (tierInfo.tier === "watch" && scorePct < 25) return null;
+  if (tierInfo.tier === "watch" && scorePct < COIL_LIGHT.dropBelowScorePct) return null;
 
   return {
     ticker,

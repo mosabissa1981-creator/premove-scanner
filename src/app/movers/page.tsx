@@ -52,7 +52,7 @@ export default function CoilMoversPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/movers/scan?band=${band}&limit=30`);
+      const res = await fetch(`/api/movers/scan?band=${band}&limit=40`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Scan failed");
       setResult(data);
@@ -162,7 +162,11 @@ export default function CoilMoversPage() {
           </div>
 
           {ready.length > 0 && (
-            <SetupSection title="Ready to move" subtitle="Coil + volume + near breakout" items={ready} />
+            <SetupSection
+              title="Ready to move"
+              subtitle="Lighter filter — 2+ signals · watch for breakout entry"
+              items={ready}
+            />
           )}
           {settingUp.length > 0 && (
             <SetupSection
@@ -187,7 +191,8 @@ export default function CoilMoversPage() {
         <h3>How Coil works</h3>
         <ul>
           <li>Screens a curated list, keeps only live prices ≤ $5</li>
-          <li>Scores coiling price, quiet base, volume heat, near breakout</li>
+          <li>Lighter entries: coil ≥45, volume ≥1.15×, within 5% of highs</li>
+          <li>Ready = any 2 of coil / volume / breakout (not all three)</li>
           <li>No options, no PreMove, no Unusual Whales key</li>
           <li>Cheap stocks are risky — wide spreads, gaps, easy to get stuck</li>
         </ul>

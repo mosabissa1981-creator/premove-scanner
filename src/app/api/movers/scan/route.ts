@@ -9,12 +9,12 @@ export const maxDuration = 60;
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const band = parseCheapBand(searchParams.get("band"));
-  const limit = Number(searchParams.get("limit") ?? "25");
+  const limit = Number(searchParams.get("limit") ?? "40");
 
   try {
     const result = await runCheapScan({
       band,
-      limit: Math.min(Math.max(limit, 1), 50),
+      limit: Math.min(Math.max(limit, 1), 60),
     });
     return NextResponse.json(result);
   } catch (err) {

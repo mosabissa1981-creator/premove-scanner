@@ -84,6 +84,36 @@ describe("cheap scoring", () => {
     expect(deriveCheapTier(signals, scorePct).tier).toBe("ready");
   });
 
+  it("marks ready with only two signals under the lighter rules", () => {
+    const signals = buildCheapSignals({
+      coilScore: 50,
+      bandWidthPct: 8,
+      priceChangePct: 10,
+      change1dPct: 1,
+      relativeVolume: 1.3,
+      nearResistance: false,
+    });
+    expect(byTriggered(signals, "coil")).toBe(true);
+    expect(byTriggered(signals, "volume")).toBe(true);
+    expect(byTriggered(signals, "breakout")).toBe(false);
+    const { scorePct } = scoreCheapSignals(signals);
+    expect(deriveCheapTier(signals, scorePct).tier).toBe("ready");
+  });
+
+  it("keeps a mild coil-only name as early instead of dropping it", () => {
+    const signals = buildCheapSignals({
+      coilScore: 48,
+      bandWidthPct: 10,
+      priceChangePct: 18,
+      change1dPct: 3,
+      relativeVolume: 0.9,
+      nearResistance: false,
+    });
+    expect(byTriggered(signals, "coil")).toBe(true);
+    const { scorePct } = scoreCheapSignals(signals);
+    expect(deriveCheapTier(signals, scorePct).tier).toBe("early");
+  });
+
   it("sorts ready ahead of early", () => {
     const ready = {
       ticker: "A",
@@ -100,3 +130,7 @@ describe("cheap scoring", () => {
     expect(compareCheapSetups(ready, early)).toBeLessThan(0);
   });
 });
+
+function byTriggered(signals: ReturnType<typeof buildCheapSignals>, id: string): boolean {
+  return signals.find((s) => s.id === id)?.triggered ?? false;
+}
