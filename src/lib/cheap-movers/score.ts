@@ -6,6 +6,7 @@ import {
   type PriceBar,
 } from "@/lib/scoring/technical";
 import { clamp01, gradedFactor, ramp } from "@/lib/scoring/util";
+import { setupPriceBand } from "@/lib/cheap-movers/universe";
 
 export type CheapTier = "ready" | "setting-up" | "early" | "watch";
 
@@ -36,7 +37,7 @@ export interface CheapSetup {
   resistanceLevel: number | null;
   stopLevel: number | null;
   signals: CheapSignal[];
-  band: "under1" | "oneToFive";
+  band: "under05" | "under1" | "oneToFive";
 }
 
 /** Lighter entry thresholds — more names qualify as watchlist / early setups. */
@@ -304,7 +305,7 @@ export function scoreCheapSeries(input: {
     resistanceLevel,
     stopLevel,
     signals,
-    band: stockPrice < 1 ? "under1" : "oneToFive",
+    band: setupPriceBand(stockPrice),
   };
 }
 

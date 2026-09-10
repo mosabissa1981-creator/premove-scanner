@@ -106,17 +106,26 @@ export const CHEAP_STOCK_UNIVERSE: string[] = [
 export const CHEAP_MAX_PRICE = 5;
 export const CHEAP_MIN_PRICE = 0.05;
 
-export type CheapBand = "all" | "under1" | "oneToFive";
+export type CheapBand = "all" | "under05" | "under1" | "oneToFive";
 
 export function parseCheapBand(value: string | null | undefined): CheapBand {
-  if (value === "under1" || value === "oneToFive") return value;
+  if (value === "under05" || value === "under1" || value === "oneToFive") return value;
   return "all";
 }
 
 export function priceInBand(price: number, band: CheapBand): boolean {
   if (!Number.isFinite(price)) return false;
   if (price < CHEAP_MIN_PRICE || price > CHEAP_MAX_PRICE) return false;
+  if (band === "under05") return price < 0.5;
   if (band === "under1") return price < 1;
   if (band === "oneToFive") return price >= 1 && price <= CHEAP_MAX_PRICE;
   return true;
 }
+
+/** Label band for a scored setup card. */
+export function setupPriceBand(price: number): "under05" | "under1" | "oneToFive" {
+  if (price < 0.5) return "under05";
+  if (price < 1) return "under1";
+  return "oneToFive";
+}
+

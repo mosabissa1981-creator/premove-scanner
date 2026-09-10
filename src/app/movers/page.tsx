@@ -32,6 +32,12 @@ function formatPrice(price: number): string {
   return `$${price.toFixed(2)}`;
 }
 
+function bandLabel(band: CheapSetup["band"]): string {
+  if (band === "under05") return "Under $0.50";
+  if (band === "under1") return "Under $1";
+  return "$1–$5";
+}
+
 export default function CoilMoversPage() {
   const [band, setBand] = useState<CheapBand>("all");
   const [loading, setLoading] = useState(false);
@@ -75,8 +81,8 @@ export default function CoilMoversPage() {
         <p className="coil-eyebrow">Free · No API key · No options</p>
         <h1 className="coil-title">Stocks under $5, before they move</h1>
         <p className="coil-lede">
-          Coil finds quiet bases with rising volume — under $1 and $1–$5 — using free Yahoo price
-          &amp; volume. Separate from PreMove. No paid key.
+          Coil finds quiet bases with rising volume — under $0.50, under $1, and $1–$5 — using free
+          Yahoo price &amp; volume. Separate from PreMove. No paid key.
         </p>
       </section>
 
@@ -89,6 +95,15 @@ export default function CoilMoversPage() {
           onClick={() => setBand("all")}
         >
           All ≤$5
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className="coil-band"
+          aria-selected={band === "under05"}
+          onClick={() => setBand("under05")}
+        >
+          Under $0.50
         </button>
         <button
           type="button"
@@ -191,6 +206,7 @@ export default function CoilMoversPage() {
         <h3>How Coil works</h3>
         <ul>
           <li>Screens a curated list, keeps only live prices ≤ $5</li>
+          <li>Bands: Under $0.50 · Under $1 · $1–$5 · All ≤$5</li>
           <li>Lighter entries: coil ≥45, volume ≥1.15×, within 5% of highs</li>
           <li>Ready = any 2 of coil / volume / breakout (not all three)</li>
           <li>No options, no PreMove, no Unusual Whales key</li>
@@ -235,9 +251,7 @@ function CoilCard({ setup }: { setup: CheapSetup }) {
           </div>
           <div className="coil-badges">
             <span className={`coil-badge ${badgeClass}`}>{setup.tierLabel}</span>
-            <span className="coil-badge">
-              {setup.band === "under1" ? "Under $1" : "$1–$5"}
-            </span>
+            <span className="coil-badge">{bandLabel(setup.band)}</span>
           </div>
           {setup.companyName && (
             <p className="coil-action" style={{ marginTop: "0.35rem" }}>
