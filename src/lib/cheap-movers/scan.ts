@@ -33,7 +33,7 @@ export async function runCheapScan(
 ): Promise<CheapScanResult> {
   const band =
     typeof options.band === "string" ? parseCheapBand(options.band) : (options.band ?? "all");
-  const limit = Math.min(Math.max(options.limit ?? 25, 1), 50);
+  const limit = Math.min(Math.max(options.limit ?? 40, 1), 60);
   const symbols = options.symbols?.length ? options.symbols : CHEAP_STOCK_UNIVERSE;
 
   const series = await fetchYahooBarsBatch(symbols, 8);
@@ -65,7 +65,7 @@ export async function runCheapScan(
     pricedInBand: pricedInBand.length,
     results: results.slice(0, limit),
     errors,
-    strategy: "cheap-yahoo-coil-volume-v1",
+    strategy: "cheap-yahoo-coil-volume-light-v2",
     source: "yahoo-free",
   };
 }
