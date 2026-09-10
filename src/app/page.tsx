@@ -5,8 +5,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
 import { loadLastSwingScan, saveLastSwingScan } from "@/lib/last-swing-scan";
-import type { ScanMode } from "@/lib/scoring/scan-mode";
-import { SCAN_MODE_CONFIG } from "@/lib/scoring/scan-mode";
 import type { ScanResult, TickerAnalysis } from "@/lib/unusualwhales/types";
 import { TickerCard } from "@/components/ticker-ui";
 import { TickerSearch } from "@/components/ticker-search";
@@ -15,7 +13,6 @@ import { MarketTideBanner } from "@/components/market-tide-banner";
 export default function ScannerPage() {
   const { apiKey, hasKey } = useApiKey();
   const router = useRouter();
-  const [mode, setMode] = useState<ScanMode>("swing");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [fromCache, setFromCache] = useState(false);
@@ -23,11 +20,11 @@ export default function ScannerPage() {
 
   // Keep last scan until user taps Find/Refresh — avoids re-burning API quota.
   useEffect(() => {
-    const cached = loadLastSwingScan(mode);
+    const cached = loadLastSwingScan("swing");
     setResult(cached);
     setFromCache(Boolean(cached));
     setError(null);
-  }, [mode]);
+  }, []);
 
   const runScan = useCallback(async () => {
     if (!hasKey) {
@@ -39,7 +36,7 @@ export default function ScannerPage() {
     setError(null);
 
     try {
-      const res = await fetch(`/api/scan?limit=20&mode=${mode}`, {
+      const res = await fetch(`/api/scan?limit=20&mode=swing`, {
         headers: apiHeaders(apiKey),
         credentials: "same-origin",
       });
@@ -47,19 +44,17 @@ export default function ScannerPage() {
       if (!res.ok) throw new Error(data.error ?? "Scan failed");
       setResult(data);
       setFromCache(false);
-      saveLastSwingScan(data, mode);
+      saveLastSwingScan(data, "swing");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Scan failed");
     } finally {
       setLoading(false);
     }
-  }, [apiKey, hasKey, mode]);
+  }, [apiKey, hasKey]);
 
   const ready = result?.results.filter((r) => r.tier === "ready") ?? [];
   const settingUp = result?.results.filter((r) => r.tier === "setting-up") ?? [];
   const early = result?.results.filter((r) => r.tier === "early") ?? [];
-  const isPenny = mode === "penny";
-  const cfg = SCAN_MODE_CONFIG[mode];
 
   return (
     <div className="space-y-6 pb-8">
@@ -78,16 +73,10 @@ export default function ScannerPage() {
       <MarketTideBanner />
 
       <section>
-        <h1 className="text-xl font-bold">{cfg.label}</h1>
+        <h1 className="text-xl font-bold">Swing Trade Setups</h1>
         <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-          {isPenny
-            ? "Sub-$1 names with coiling price, unusual flow, and volume heat — before the move."
-            : "Multi-day swing candidates — flat price + hidden flow before the move. Hold "}
-          {!isPenny && (
-            <>
-              <strong className="text-zinc-300">3–15 days</strong>, not scalps.
-            </>
-          )}
+          Multi-day swing candidates — flat price + hidden flow before the move. Hold{" "}
+          <strong className="text-zinc-300">3–15 days</strong>, not scalps.
         </p>
       </section>
 
@@ -97,18 +86,28 @@ export default function ScannerPage() {
         aria-label="Scanner mode"
       >
         <ModeTab
-          active={mode === "swing"}
+          active
           label="Swing"
-          hint="Any price"
-          onClick={() => setMode("swing")}
+          hint="Needs API key"
+          onClick={() => {}}
         />
         <ModeTab
-          active={mode === "penny"}
-          label="Penny <$1"
-          hint="Ready to move"
-          onClick={() => setMode("penny")}
+          active={false}
+          label="Under $5 Free"
+          hint="No key · stocks only"
+          onClick={() => router.push("/cheap")}
         />
       </div>
+
+      <Link
+        href="/cheap"
+        className="block rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm"
+      >
+        <p className="font-semibold text-emerald-300">Want under $5 with no API key?</p>
+        <p className="mt-1 text-emerald-200/70">
+          Open the free Under $5 scanner — Yahoo price &amp; volume only, no options →
+        </p>
+      </Link>
 
       <section className="space-y-2">
         <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -123,17 +122,7 @@ export default function ScannerPage() {
         disabled={loading || !hasKey}
         className="w-full rounded-xl bg-emerald-500 py-4 text-base font-bold text-black transition hover:bg-emerald-400 disabled:opacity-40"
       >
-        {loading
-          ? isPenny
-            ? "Scanning penny setups…"
-            : "Scanning swing setups…"
-          : result
-            ? isPenny
-              ? "Refresh Penny Setups"
-              : "Refresh Swing Setups"
-            : isPenny
-              ? "Find Penny Stocks Ready to Move"
-              : "Find Swing Setups"}
+        {loading ? "Scanning swing setups…" : result ? "Refresh Swing Setups" : "Find Swing Setups"}
       </button>
 
       {error && (
@@ -145,9 +134,7 @@ export default function ScannerPage() {
       {loading && (
         <div className="flex items-center gap-3 text-sm text-zinc-400">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-emerald-500" />
-          {isPenny
-            ? "Screening stocks under $1 with flow + volume heat… ~1 min"
-            : "Scanning flat-price stocks with hidden flow… ~1 min"}
+          Scanning flat-price stocks with hidden flow… ~1 min
         </div>
       )}
 
@@ -179,11 +166,9 @@ export default function ScannerPage() {
 
           {ready.length > 0 && (
             <Section
-              title={isPenny ? "Ready to Move" : "Ready to Swing"}
+              title={"Ready to Swing"}
               subtitle={
-                isPenny
-                  ? "Breakout zone under $1 — size small, expect wide spreads"
-                  : "Breakout zone — enter on daily close above resistance (3–10 day hold)"
+                "Breakout zone — enter on daily close above resistance (3–10 day hold)"
               }
               items={ready}
               onSelect={(t) => router.push(`/ticker/${t}`)}
@@ -193,9 +178,7 @@ export default function ScannerPage() {
             <Section
               title="Watchlist — Setting Up"
               subtitle={
-                isPenny
-                  ? "Flow / volume building — wait for breakout confirmation"
-                  : "Smart money loading — wait for breakout (5–15 day swing)"
+                "Smart money loading — wait for breakout (5–15 day swing)"
               }
               items={settingUp}
               onSelect={(t) => router.push(`/ticker/${t}`)}
@@ -212,9 +195,7 @@ export default function ScannerPage() {
 
           {result.results.length === 0 && (
             <p className="text-center text-sm text-zinc-500">
-              {isPenny
-                ? "No sub-$1 setups right now. Try again after market open."
-                : "No strong setups right now. Try again after market open."}
+              {"No strong setups right now. Try again after market open."}
             </p>
           )}
 
@@ -230,24 +211,10 @@ export default function ScannerPage() {
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-xs text-zinc-500">
         <p className="font-medium text-zinc-400">
-          {isPenny ? "Penny playbook" : "Swing trade playbook"}
+          {"Swing trade playbook"}
         </p>
         <ul className="mt-2 space-y-1.5">
-          {isPenny ? (
-            <>
-              <li>
-                ✅ <strong className="text-zinc-400">Under $1 only</strong> — filtered by UW price +
-                post-check
-              </li>
-              <li>
-                📡 Looks for coil + call flow + OI + relative volume heat
-              </li>
-              <li>
-                ⚠︎ Penny names are illiquid — wide spreads, gap risk, easy to get stuck
-              </li>
-              <li>💾 Last penny scan stays until you tap Refresh</li>
-            </>
-          ) : (
+          {(
             <>
               <li>
                 ✅ <strong className="text-zinc-400">Ready to Swing</strong> — enter on breakout,
