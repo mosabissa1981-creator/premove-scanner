@@ -26,8 +26,8 @@ export function derivePhase(signals: SignalDetail[]): PhaseResult {
     return {
       phase: "ignition",
       phaseLabel: "Ready to Break",
-      action: "Swing entry on daily close above resistance with volume. Hold 3–10 days.",
-      holdTime: "3–10 day swing",
+      action: "Options swing: buy calls / debit spreads on daily close above resistance. Hold 1–2 weeks.",
+      holdTime: "1–2 week options swing",
       tier: "ready",
     };
   }
@@ -38,8 +38,8 @@ export function derivePhase(signals: SignalDetail[]): PhaseResult {
       phase: "conviction",
       phaseLabel: "Flow Without Coil",
       action:
-        "Call flow is active but price is not coiled/flat. Wait for compression before entry.",
-      holdTime: "5–15 day swing",
+        "Call flow is active but price is not coiled/flat. Wait for compression before a 1–2 week options entry.",
+      holdTime: "1–2 week options swing",
       tier: "setting-up",
     };
   }
@@ -48,8 +48,8 @@ export function derivePhase(signals: SignalDetail[]): PhaseResult {
     return {
       phase: "conviction",
       phaseLabel: "Smart Money Entering",
-      action: "Watchlist only. Enter on breakout — target 5–15 day swing.",
-      holdTime: "5–15 day swing",
+      action: "Watchlist only. Enter on breakout — target 1–2 week options swing.",
+      holdTime: "1–2 week options swing",
       tier: "setting-up",
     };
   }

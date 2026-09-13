@@ -23,6 +23,7 @@ import {
 import {
   calculateCoilMetrics,
   calculatePriceChangePct,
+  calculateRecentChangePct,
   getResistanceLevel,
   getSwingStop,
   isNearResistance,
@@ -72,6 +73,17 @@ function relativeVolume(row: UwStockScreenerRow): number | null {
   return vol / avg;
 }
 
+/** True when alerts include ask-side call sweeps in the 7–45 DTE swing window. */
+function hasSwingHorizonFlow(alerts: UwFlowAlert[], minPremium: number): boolean {
+  return alerts.some((a) => {
+    const premium = parseNum(a.total_premium);
+    const isCall = (a.type ?? a.option_type ?? "").toLowerCase() === "call";
+    const dte = typeof a.dte === "number" ? a.dte : Number(a.dte);
+    const dteOk = Number.isFinite(dte) ? dte >= 7 && dte <= 45 : true;
+    return premium >= minPremium && !!a.has_sweep && isCall && dteOk;
+  });
+}
+
 function hasAggressiveFlow(alerts: UwFlowAlert[], minPremium: number): boolean {
   return alerts.some((a) => {
     const premium = parseNum(a.total_premium);
@@ -116,15 +128,29 @@ export function buildSignals(input: {
   earningsSoon: boolean;
   /** Minimum total premium for bullish-flow signal (penny mode uses a lower bar). */
   minBullishPremium?: number;
+  /** 10d % change — preferred flatness window for 1–2 week options swings. */
+  recentChangePct?: number;
+  /** Ask-side sweeps in the 7–45 DTE options-swing window. */
+  swingHorizonFlow?: boolean;
 }): SignalDetail[] {
   const minBullishPremium = input.minBullishPremium ?? 250_000;
-  const priceIsFlat = Math.abs(input.priceChangePct) < 3;
+  // Prefer 10d compression for 1–2 week options timing; fall back to 30d.
+  const flatnessPct = input.recentChangePct ?? input.priceChangePct;
+  const priceIsFlat = Math.abs(flatnessPct) < 5;
   const coilTight = input.coilScore >= 65;
   const darkPoolRatio =
     input.darkPoolBaseline > 0 ? input.darkPoolNotional / input.darkPoolBaseline : 0;
   const darkPoolElevated = darkPoolRatio > 1.5;
   const bullishFlow = input.premiumRatio < 0.85 && input.premium >= minBullishPremium;
-  const ivRisingFlat = input.ivRank !== null && input.ivRank >= 55 && priceIsFlat;
+  // Options long-premium sweet spot: affordable IV (20–55) while compressed,
+  // or elevated IV only when aggressive/swing-horizon flow is paying up.
+  const ivBuyZone =
+    input.ivRank !== null && input.ivRank >= 20 && input.ivRank <= 55 && priceIsFlat;
+  const ivDemand =
+    input.ivRank !== null &&
+    input.ivRank > 55 &&
+    priceIsFlat &&
+    (input.aggressiveFlow || input.inFlowAlerts || !!input.swingHorizonFlow);
   const approachingFlip =
     input.gexFlipDistance !== null && Math.abs(input.gexFlipDistance) <= 2;
 
@@ -134,20 +160,25 @@ export function buildSignals(input: {
   const darkTriggered = darkPoolElevated && priceIsFlat;
   const darkStrength = darkTriggered ? gradedFactor(ramp(darkPoolRatio, 1.5, 5)) : 0;
 
-  const flowTriggered = input.aggressiveFlow || input.inFlowAlerts || bullishFlow;
+  const flowTriggered =
+    input.aggressiveFlow || input.inFlowAlerts || bullishFlow || !!input.swingHorizonFlow;
   const flowStrength = flowTriggered
-    ? input.aggressiveFlow
+    ? input.swingHorizonFlow || input.aggressiveFlow
       ? 1
       : input.inFlowAlerts
-        ? 0.8
+        ? 0.85
         : 0.6
     : 0;
 
-  const ivTriggered = ivRisingFlat;
+  const ivTriggered = ivBuyZone || ivDemand;
   // Dampen the IV signal when earnings are imminent — the IV pop is usually
   // the event being priced, not organic accumulation.
   const ivStrengthBase =
-    ivTriggered && input.ivRank !== null ? gradedFactor(ramp(input.ivRank, 55, 90)) : 0;
+    ivTriggered && input.ivRank !== null
+      ? ivBuyZone
+        ? gradedFactor(ramp(input.ivRank, 20, 45))
+        : gradedFactor(ramp(input.ivRank, 55, 90))
+      : 0;
   const ivStrength = input.earningsSoon ? ivStrengthBase * 0.25 : ivStrengthBase;
 
   const techTriggered = input.nearResistance;
@@ -174,7 +205,7 @@ export function buildSignals(input: {
       points: 2,
       triggered: coilTriggered,
       strength: coilStrength,
-      description: `Coil ${input.coilScore}/100, ${input.coilBandWidthPct.toFixed(1)}% band width — spring winding`,
+      description: `Coil ${input.coilScore}/100, ${input.coilBandWidthPct.toFixed(1)}% band width — compressed for a 1–2 week options swing`,
     },
     {
       id: "darkpool",
@@ -194,17 +225,19 @@ export function buildSignals(input: {
       points: 2,
       triggered: flowTriggered,
       strength: flowStrength,
-      description: input.aggressiveFlow
-        ? "Sweep or large call flow detected"
-        : input.inFlowAlerts
-          ? "On today's unusual flow alerts"
-          : bullishFlow
-            ? "Bullish premium bias"
-            : "No urgent flow yet",
+      description: input.swingHorizonFlow
+        ? "7–45 DTE call sweeps — options swing horizon"
+        : input.aggressiveFlow
+          ? "Sweep or large call flow detected"
+          : input.inFlowAlerts
+            ? "On today's unusual flow alerts"
+            : bullishFlow
+              ? "Bullish premium bias"
+              : "No urgent flow yet",
     },
     {
       id: "iv",
-      label: "IV Up, Price Flat",
+      label: "IV Options Zone",
       phase: "conviction",
       points: 1,
       triggered: ivTriggered,
@@ -214,7 +247,7 @@ export function buildSignals(input: {
           ? "IV data unavailable"
           : input.earningsSoon
             ? `IV rank ${input.ivRank.toFixed(0)}% — but earnings soon, likely event IV`
-            : `IV rank ${input.ivRank.toFixed(0)}% — market pricing a move`,
+            : `IV rank ${input.ivRank.toFixed(0)}% — options premium zone for a 1–2 week swing`,
     },
     {
       id: "technical",
@@ -467,6 +500,8 @@ export function discoveryRank(c: CandidateMeta): number {
   r += (c.sources?.length ?? 1) * 3;
   if (c.inFlowAlerts) r += 3;
   if (c.inCoilScreener) r += 2;
+  if (c.sources?.includes("swing-flow")) r += 4;
+  if (c.sources?.includes("call-oi")) r += 2;
   r += clamp01((c.oiChangePerc ?? 0) / 20) * 3;
   r += clamp01((c.relativeVolume ?? 0) / 3) * 2;
   return r;
@@ -482,21 +517,25 @@ export async function discoverCandidates(
   const cfg = SCAN_MODE_CONFIG[mode];
   const priceFilter = screenerPriceParams(cfg);
 
+  // Swing mode casts a wider net (more names) then quality + 1–2 week signals rank them.
+  const flatBand = mode === "swing" ? (["-4", "4"] as const) : (["-2", "2"] as const);
+  const oiBand = mode === "swing" ? (["-5", "5"] as const) : (["-3", "3"] as const);
+
   const screenerJobs: Promise<UwDataResponse<UwStockScreenerRow[]>>[] = [
-    // Bucket A: flat price + strong net call premium (hidden bullish flow).
+    // Bucket A: flat/coiling price + strong net call premium (hidden bullish flow).
     client.stockScreener({
-      min_change: "-2",
-      max_change: "2",
+      min_change: flatBand[0],
+      max_change: flatBand[1],
       min_net_call_premium: cfg.minNetCallPremium,
       order: "net_call_premium",
       order_direction: "desc",
       date,
       ...priceFilter,
     }) as Promise<UwDataResponse<UwStockScreenerRow[]>>,
-    // Bucket B: flat price + rising open interest (quiet positioning).
+    // Bucket B: mild flat + rising open interest (quiet positioning).
     client.stockScreener({
-      min_change: "-3",
-      max_change: "3",
+      min_change: oiBand[0],
+      max_change: oiBand[1],
       min_total_oi_change_perc: cfg.minOiChangePerc,
       order: "total_oi_change_perc",
       order_direction: "desc",
@@ -505,8 +544,34 @@ export async function discoverCandidates(
     }) as Promise<UwDataResponse<UwStockScreenerRow[]>>,
   ];
 
-  // Bucket C (penny): relative volume heat — sub-$1 names often tip via stock
-  // volume before options premium shows up on the big-cap screens.
+  // Bucket C (swing): call OI building — classic 1–2 week options positioning tell.
+  const callOiJob =
+    mode === "swing"
+      ? (client.stockScreener({
+          min_change: "-5",
+          max_change: "5",
+          min_call_oi_change_perc: cfg.minOiChangePerc,
+          order: "call_oi_change_perc",
+          order_direction: "desc",
+          date,
+          ...priceFilter,
+        }) as Promise<UwDataResponse<UwStockScreenerRow[]>>)
+      : Promise.resolve({ data: [] as UwStockScreenerRow[] });
+
+  // Bucket D (swing): raw bullish premium leaders (catch names flat screens miss).
+  const bullishPremJob =
+    mode === "swing"
+      ? (client.stockScreener({
+          min_change: "-6",
+          max_change: "6",
+          order: "bullish_premium",
+          order_direction: "desc",
+          date,
+          ...priceFilter,
+        }) as Promise<UwDataResponse<UwStockScreenerRow[]>>)
+      : Promise.resolve({ data: [] as UwStockScreenerRow[] });
+
+  // Bucket E (penny): relative volume heat — sub-$1 names often tip via stock volume.
   const volumeJob = cfg.minStockVolumeVsAvg30
     ? (client.stockScreener({
         min_change: "-5",
@@ -519,17 +584,32 @@ export async function discoverCandidates(
       }) as Promise<UwDataResponse<UwStockScreenerRow[]>>)
     : Promise.resolve({ data: [] as UwStockScreenerRow[] });
 
-  const [flatCallRes, oiChangeRes, volumeRes, flowRes] = await Promise.all([
-    screenerJobs[0],
-    screenerJobs[1],
-    volumeJob,
-    client.flowAlerts({
-      unusual: true,
-      is_ask_side: true,
-      min_premium: cfg.minFlowPremium,
-      limit: 200,
-    }) as Promise<UwDataResponse<UwFlowAlert[]>>,
-  ]);
+  const [flatCallRes, oiChangeRes, callOiRes, bullishPremRes, volumeRes, flowRes, swingFlowRes] =
+    await Promise.all([
+      screenerJobs[0],
+      screenerJobs[1],
+      callOiJob,
+      bullishPremJob,
+      volumeJob,
+      client.flowAlerts({
+        unusual: true,
+        is_ask_side: true,
+        min_premium: cfg.minFlowPremium,
+        limit: 200,
+      }) as Promise<UwDataResponse<UwFlowAlert[]>>,
+      // Options-swing tape: ask-side sweeps with 7–45 DTE (filters 0DTE noise + LEAPs).
+      mode === "swing"
+        ? (client.flowAlerts({
+            unusual: true,
+            is_ask_side: true,
+            is_sweep: true,
+            min_dte: 7,
+            max_dte: 45,
+            min_premium: cfg.minFlowPremium,
+            limit: 200,
+          }) as Promise<UwDataResponse<UwFlowAlert[]>>)
+        : Promise.resolve({ data: [] as UwFlowAlert[] }),
+    ]);
 
   const merged = new Map<string, CandidateMeta>();
 
@@ -554,25 +634,38 @@ export async function discoverCandidates(
 
   for (const row of flatCallRes.data ?? []) mergeScreenerRow(row, "flat-call");
   for (const row of oiChangeRes.data ?? []) mergeScreenerRow(row, "oi-change");
+  for (const row of callOiRes.data ?? []) mergeScreenerRow(row, "call-oi");
+  for (const row of bullishPremRes.data ?? []) mergeScreenerRow(row, "bullish-prem");
   for (const row of volumeRes.data ?? []) mergeScreenerRow(row, "rel-volume");
 
-  const flowTickers = new Set<string>();
-  for (const alert of flowRes.data ?? []) {
-    if (flowTickers.has(alert.ticker)) continue;
-    flowTickers.add(alert.ticker);
-
+  function mergeFlowAlert(alert: UwFlowAlert, source: string) {
     const alertPrice = parseNum(alert.underlying_price);
-    if (mode === "penny" && !isPennyPrice(alertPrice)) continue;
+    if (mode === "penny" && !isPennyPrice(alertPrice)) return;
 
     const existing = merged.get(alert.ticker);
     if (existing) {
       existing.inFlowAlerts = true;
       existing.sources = existing.sources ?? [];
-      if (!existing.sources.includes("flow")) existing.sources.push("flow");
-      continue;
+      if (!existing.sources.includes(source)) existing.sources.push(source);
+      return;
     }
+    const candidate = candidateFromFlowAlert(alert);
+    candidate.sources = [source];
+    merged.set(alert.ticker, candidate);
+  }
 
-    merged.set(alert.ticker, candidateFromFlowAlert(alert));
+  const seenFlow = new Set<string>();
+  for (const alert of flowRes.data ?? []) {
+    if (seenFlow.has(alert.ticker)) continue;
+    seenFlow.add(alert.ticker);
+    mergeFlowAlert(alert, "flow");
+  }
+
+  const seenSwing = new Set<string>();
+  for (const alert of swingFlowRes.data ?? []) {
+    if (seenSwing.has(alert.ticker)) continue;
+    seenSwing.add(alert.ticker);
+    mergeFlowAlert(alert, "swing-flow");
   }
 
   return [...merged.values()]
@@ -628,6 +721,7 @@ export async function analyzeTicker(
   const bars = toPriceBars(ohlcRes.data ?? []);
   const { score: coilScore, bandWidthPct: coilBandWidthPct } = calculateCoilMetrics(bars);
   const priceChangePct = calculatePriceChangePct(bars);
+  const recentChangePct = calculateRecentChangePct(bars, 10);
   const nearResistance = isNearResistance(bars);
   const resistanceLevel = getResistanceLevel(bars);
   const stopLevel = getSwingStop(bars);
@@ -638,11 +732,14 @@ export async function analyzeTicker(
   const gex = gexRes.data ? computeGexLevelsFromUw(gexRes.data, stockPrice) : null;
   const ivRank = computeIvRank(ivRes.data ?? []);
   const aggressiveFlow = hasAggressiveFlow(flowAlerts, cfg.minAggressivePremium);
+  const swingHorizonFlow =
+    candidate.sources?.includes("swing-flow") ||
+    hasSwingHorizonFlow(flowAlerts, cfg.minAggressivePremium);
   const inFlowAlerts =
     candidate.inFlowAlerts ||
     flowAlerts.some((a) => parseNum(a.total_premium) >= cfg.minFlowPremium);
   const inCoilScreener =
-    candidate.inCoilScreener || (coilScore >= 65 && Math.abs(priceChangePct) < 3);
+    candidate.inCoilScreener || (coilScore >= 65 && Math.abs(recentChangePct) < 5);
 
   const earningsInDays = daysUntilEarnings(candidate.nextEarnings ?? null);
   const earningsSoon = isEarningsSoon(earningsInDays);
@@ -669,6 +766,8 @@ export async function analyzeTicker(
     inFlowAlerts,
     earningsSoon,
     minBullishPremium: cfg.minBullishPremium,
+    recentChangePct,
+    swingHorizonFlow,
   });
 
   const { score, maxScore, scorePct } = scoreSignals(signals);
@@ -722,7 +821,7 @@ export async function runConfluenceScan(
   strategy: string;
   mode: ScanMode;
 }> {
-  const limit = options.limit ?? 25;
+  const limit = options.limit ?? 30;
   const mode = parseScanMode(options.mode);
   const cfg = SCAN_MODE_CONFIG[mode];
   const candidates = await discoverCandidates(client, limit, { mode });

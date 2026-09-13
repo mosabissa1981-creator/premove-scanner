@@ -1,14 +1,14 @@
 import type { TickerAnalysis } from "@/lib/unusualwhales/types";
 import type { PhaseResult } from "@/lib/scoring/phases";
 
-/** 30d move already happened — too late for a fresh pre-move swing. */
-export const EXTENDED_MOVE_PCT = 15;
+/** 30d move already happened — too late for a fresh 1–2 week options swing. */
+export const EXTENDED_MOVE_PCT = 22;
 
 /** 30d downtrend — not a long-side swing setup. */
-export const DOWNTREND_PCT = -8;
+export const DOWNTREND_PCT = -12;
 
 /** Minimum graded score to stay in Ready (max = 11). */
-export const READY_MIN_SCORE = 6;
+export const READY_MIN_SCORE = 5;
 
 /**
  * Post-process Ready setups so winners look like CRWV (flat + coil + score)
@@ -48,7 +48,7 @@ export function applySetupQualityFilter(
       phaseLabel: "Needs More Confirmation",
       action:
         "Near Ready but score is still light. Wait for stronger coil + flow before entering.",
-      holdTime: "5–15 day swing",
+      holdTime: "1–2 week options swing",
       tier: "setting-up",
     };
   }

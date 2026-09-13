@@ -288,3 +288,53 @@ describe("discoverCandidates penny mode", () => {
     expect(calls.some((p) => p.min_stock_volume_vs_avg30_volume === "1.5")).toBe(true);
   });
 });
+
+describe("buildSignals options-swing upgrades", () => {
+  it("treats a 10d coil as flat even when the 30d move is larger", () => {
+    const signals = buildSignals(
+      strongSetup({ priceChangePct: 8, recentChangePct: 1.2 }),
+    );
+    expect(byId(signals, "coil").triggered).toBe(true);
+  });
+
+  it("still rejects names that are extended on the recent window", () => {
+    const signals = buildSignals(
+      strongSetup({ priceChangePct: 1, recentChangePct: 9 }),
+    );
+    expect(byId(signals, "coil").triggered).toBe(false);
+  });
+
+  it("boosts flow when swing-horizon sweeps are present", () => {
+    const base = byId(
+      buildSignals(strongSetup({ aggressiveFlow: false, inFlowAlerts: false, premium: 0 })),
+      "flow",
+    );
+    const swung = byId(
+      buildSignals(
+        strongSetup({
+          aggressiveFlow: false,
+          inFlowAlerts: false,
+          premium: 0,
+          swingHorizonFlow: true,
+        }),
+      ),
+      "flow",
+    );
+    expect(base.triggered).toBe(false);
+    expect(swung.triggered).toBe(true);
+    expect(swung.strength).toBe(1);
+    expect(swung.description).toContain("7–45 DTE");
+  });
+
+  it("fires IV buy-zone for mid IV ranks while compressed", () => {
+    const signals = buildSignals(
+      strongSetup({
+        ivRank: 35,
+        aggressiveFlow: false,
+        inFlowAlerts: false,
+        recentChangePct: 1,
+      }),
+    );
+    expect(byId(signals, "iv").triggered).toBe(true);
+  });
+});
