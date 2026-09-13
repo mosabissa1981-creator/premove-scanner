@@ -3,6 +3,7 @@ import {
   calculateCoilMetrics,
   calculateCoilScore,
   calculatePriceChangePct,
+  calculateRecentChangePct,
   isNearResistance,
   toPriceBars,
   type PriceBar,
@@ -91,5 +92,16 @@ describe("isNearResistance", () => {
 
   it("returns false with fewer than 11 bars", () => {
     expect(isNearResistance(Array.from({ length: 10 }, () => bar(100)))).toBe(false);
+  });
+});
+
+describe("calculateRecentChangePct", () => {
+  it("uses only the last N bars", () => {
+    const bars = [
+      ...Array.from({ length: 20 }, () => bar(50)),
+      ...Array.from({ length: 10 }, (_, i) => bar(100 + i)),
+    ];
+    // full series is huge; last 10 goes 100 -> 109
+    expect(calculateRecentChangePct(bars, 10)).toBeCloseTo(9, 0);
   });
 });

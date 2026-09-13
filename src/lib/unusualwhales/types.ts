@@ -240,7 +240,11 @@ export interface UwStockScreenerRow {
 export interface UwFlowAlert {
   ticker: string;
   type: string;
+  option_type?: string;
   total_premium: string;
+  /** Days to expiry when provided by UW flow alert payloads. */
+  dte?: number | string;
+
   total_ask_side_prem: string;
   total_bid_side_prem: string;
   has_sweep: boolean;

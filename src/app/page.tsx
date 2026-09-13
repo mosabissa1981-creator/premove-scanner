@@ -37,7 +37,7 @@ export default function ScannerPage() {
     setError(null);
 
     try {
-      const res = await fetch("/api/scan?limit=20", {
+      const res = await fetch("/api/scan?limit=30", {
         headers: apiHeaders(apiKey),
         credentials: "same-origin",
       });
@@ -74,10 +74,11 @@ export default function ScannerPage() {
       <MarketTideBanner />
 
       <section>
-        <h1 className="text-xl font-bold">Swing Trade Setups</h1>
+        <h1 className="text-xl font-bold">Options Swing Scanner</h1>
         <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-          Multi-day swing candidates — flat price + hidden flow before the move. Hold{" "}
-          <strong className="text-zinc-300">3–15 days</strong>, not scalps.
+          Find stocks primed for a <strong className="text-zinc-300">1–2 week</strong> options
+          move — coiled price, bullish call flow, near breakout. Built for calls / debit spreads,
+          not day trades.
         </p>
       </section>
 
@@ -94,7 +95,7 @@ export default function ScannerPage() {
         disabled={loading || !hasKey}
         className="w-full rounded-xl bg-emerald-500 py-4 text-base font-bold text-black transition hover:bg-emerald-400 disabled:opacity-40"
       >
-        {loading ? "Scanning swing setups…" : result ? "Refresh Swing Setups" : "Find Swing Setups"}
+        {loading ? "Scanning 1–2 week options setups…" : result ? "Refresh Options Swings" : "Find Options Swings"}
       </button>
 
       {error && (
@@ -106,7 +107,7 @@ export default function ScannerPage() {
       {loading && (
         <div className="flex items-center gap-3 text-sm text-zinc-400">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-emerald-500" />
-          Scanning flat-price stocks with hidden flow… ~1 min
+          Scanning coiled names with 7–45 DTE call flow… ~1 min
         </div>
       )}
 
@@ -139,7 +140,7 @@ export default function ScannerPage() {
           {ready.length > 0 && (
             <Section
               title="Ready to Swing"
-              subtitle="Breakout zone — enter on daily close above resistance (3–10 day hold)"
+              subtitle="Breakout zone — options entry on close above resistance (1–2 week hold)"
               items={ready}
               onSelect={(t) => router.push(`/ticker/${t}`)}
             />
@@ -147,7 +148,7 @@ export default function ScannerPage() {
           {settingUp.length > 0 && (
             <Section
               title="Watchlist — Setting Up"
-              subtitle="Smart money loading — wait for breakout (5–15 day swing)"
+              subtitle="Smart money loading — wait for breakout (1–2 week options swing)"
               items={settingUp}
               onSelect={(t) => router.push(`/ticker/${t}`)}
             />
@@ -178,11 +179,10 @@ export default function ScannerPage() {
       )}
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-xs text-zinc-500">
-        <p className="font-medium text-zinc-400">Swing trade playbook</p>
+        <p className="font-medium text-zinc-400">Options swing playbook</p>
         <ul className="mt-2 space-y-1.5">
           <li>
-            ✅ <strong className="text-zinc-400">Ready to Swing</strong> — enter on breakout, hold
-            3–10 days
+            ✅ <strong className="text-zinc-400">Ready to Swing</strong> — enter on breakout, hold 1–2 weeks
           </li>
           <li>
             👀 <strong className="text-zinc-400">Setting Up</strong> — watchlist, enter when it hits

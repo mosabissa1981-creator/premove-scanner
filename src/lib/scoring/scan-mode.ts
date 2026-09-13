@@ -25,12 +25,15 @@ export interface ScanModeConfig {
 
 export const SCAN_MODE_CONFIG: Record<ScanMode, ScanModeConfig> = {
   swing: {
-    label: "Swing Trade Setups",
-    strategy: "multi-bucket-quality-v2",
-    minNetCallPremium: "250000",
-    minFlowPremium: 100_000,
-    minBullishPremium: 250_000,
-    minAggressivePremium: 100_000,
+    label: "Options Swing (1–2 Weeks)",
+    strategy: "options-swing-v4-equity",
+    // Single-name equities — options flow on ETFs is usually hedging noise.
+    issueTypes: "Common Stock",
+    // Slightly lower premium bar vs mega-cap-only so more liquid midcaps surface.
+    minNetCallPremium: "150000",
+    minFlowPremium: 75_000,
+    minBullishPremium: 150_000,
+    minAggressivePremium: 75_000,
     minOiChangePerc: "5",
   },
   penny: {

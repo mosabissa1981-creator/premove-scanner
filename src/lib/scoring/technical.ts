@@ -72,6 +72,17 @@ export function calculatePriceChangePct(bars: PriceBar[]): number {
   return ((last - first) / first) * 100;
 }
 
+/** % change over the last N closes (default 10) — better for 1–2 week coil flatness. */
+export function calculateRecentChangePct(bars: PriceBar[], window = 10): number {
+  if (bars.length < 2) return 0;
+  const slice = bars.slice(-Math.max(2, window));
+  const first = slice[0].closePrice;
+  const last = slice[slice.length - 1].closePrice;
+  if (first === 0) return 0;
+  return ((last - first) / first) * 100;
+}
+
+
 export function getResistanceLevel(bars: PriceBar[]): number | null {
   if (bars.length < 10) return null;
   return Math.max(...bars.slice(-10).map((b) => b.highPrice));
