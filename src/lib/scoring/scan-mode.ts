@@ -26,7 +26,7 @@ export interface ScanModeConfig {
 export const SCAN_MODE_CONFIG: Record<ScanMode, ScanModeConfig> = {
   swing: {
     label: "Options Swing (1–2 Weeks)",
-    strategy: "options-swing-v3",
+    strategy: "options-swing-v4-equity",
     // Single-name equities — options flow on ETFs is usually hedging noise.
     issueTypes: "Common Stock",
     // Slightly lower premium bar vs mega-cap-only so more liquid midcaps surface.

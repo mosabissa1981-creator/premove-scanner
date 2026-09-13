@@ -21,6 +21,10 @@ import {
   compareSetupQuality,
 } from "@/lib/scoring/setup-quality";
 import {
+  filterOptionsEquityTickers,
+  isBlockedOptionsVehicle,
+} from "@/lib/scoring/equity-universe";
+import {
   calculateCoilMetrics,
   calculatePriceChangePct,
   calculateRecentChangePct,
@@ -595,6 +599,7 @@ export async function discoverCandidates(
         unusual: true,
         is_ask_side: true,
         min_premium: cfg.minFlowPremium,
+        ...(cfg.issueTypes ? { "issue_types[]": cfg.issueTypes } : {}),
         limit: 200,
       }) as Promise<UwDataResponse<UwFlowAlert[]>>,
       // Options-swing tape: ask-side sweeps with 7–45 DTE (filters 0DTE noise + LEAPs).
@@ -606,6 +611,7 @@ export async function discoverCandidates(
             min_dte: 7,
             max_dte: 45,
             min_premium: cfg.minFlowPremium,
+        ...(cfg.issueTypes ? { "issue_types[]": cfg.issueTypes } : {}),
             limit: 200,
           }) as Promise<UwDataResponse<UwFlowAlert[]>>)
         : Promise.resolve({ data: [] as UwFlowAlert[] }),
@@ -614,6 +620,7 @@ export async function discoverCandidates(
   const merged = new Map<string, CandidateMeta>();
 
   function mergeScreenerRow(row: UwStockScreenerRow, source: string) {
+    if (isBlockedOptionsVehicle(row.ticker)) return;
     const price = parseNum(row.close);
     if (mode === "penny" && !isPennyPrice(price)) return;
 
@@ -639,6 +646,7 @@ export async function discoverCandidates(
   for (const row of volumeRes.data ?? []) mergeScreenerRow(row, "rel-volume");
 
   function mergeFlowAlert(alert: UwFlowAlert, source: string) {
+    if (isBlockedOptionsVehicle(alert.ticker)) return;
     const alertPrice = parseNum(alert.underlying_price);
     if (mode === "penny" && !isPennyPrice(alertPrice)) return;
 
@@ -668,7 +676,7 @@ export async function discoverCandidates(
     mergeFlowAlert(alert, "swing-flow");
   }
 
-  return [...merged.values()]
+  return filterOptionsEquityTickers([...merged.values()])
     .sort((a, b) => {
       const rank = discoveryRank(b) - discoveryRank(a);
       if (rank !== 0) return rank;
@@ -846,7 +854,7 @@ export async function runConfluenceScan(
         if (mode === "penny" && !isPennyPrice(analysis.stockPrice ?? 0)) {
           continue;
         }
-        if (analysis.tier !== "watch" || analysis.score >= 3) {
+        if (analysis.tier !== "watch" && !isBlockedOptionsVehicle(analysis.ticker)) {
           results.push(analysis);
         }
       } catch (err) {

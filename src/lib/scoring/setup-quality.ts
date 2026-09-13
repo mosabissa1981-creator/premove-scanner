@@ -2,47 +2,51 @@ import type { TickerAnalysis } from "@/lib/unusualwhales/types";
 import type { PhaseResult } from "@/lib/scoring/phases";
 
 /** 30d move already happened — too late for a fresh 1–2 week options swing. */
-export const EXTENDED_MOVE_PCT = 22;
+export const EXTENDED_MOVE_PCT = 18;
 
 /** 30d downtrend — not a long-side swing setup. */
-export const DOWNTREND_PCT = -12;
+export const DOWNTREND_PCT = -10;
 
 /** Minimum graded score to stay in Ready (max = 11). */
 export const READY_MIN_SCORE = 5;
 
+/** Weak Setting Up / Flow Without Coil noise floor. */
+export const SETTING_UP_MIN_SCORE = 4.5;
+
 /**
- * Post-process Ready setups so winners look like CRWV (flat + coil + score)
- * and losers (extended runners / downtrends / weak scores) get demoted.
+ * Post-process tiers so options-swing lists stay single-name + coiled.
+ * Extended runners and downtrends are demoted from Ready *and* Setting Up
+ * (they used to clutter Setting Up as "Flow Without Coil").
  */
 export function applySetupQualityFilter(
   phase: PhaseResult,
   opts: { score: number; priceChangePct: number },
 ): PhaseResult {
-  if (phase.tier !== "ready") return phase;
-
   const { score, priceChangePct } = opts;
 
-  if (priceChangePct > EXTENDED_MOVE_PCT) {
-    return {
-      phase: "amplify",
-      phaseLabel: "Already Extended",
-      action: `Already up ${priceChangePct.toFixed(0)}% over ~30d. Too late for a fresh swing entry — skip or trail only.`,
-      holdTime: "Skip new entry",
-      tier: "watch",
-    };
+  // Extended / downtrend: never keep as tradeable Ready or Setting Up.
+  if (phase.tier === "ready" || phase.tier === "setting-up") {
+    if (priceChangePct > EXTENDED_MOVE_PCT) {
+      return {
+        phase: "amplify",
+        phaseLabel: "Already Extended",
+        action: `Already up ${priceChangePct.toFixed(0)}% over ~30d. Too late for a fresh options swing — skip or trail only.`,
+        holdTime: "Skip new entry",
+        tier: "watch",
+      };
+    }
+    if (priceChangePct < DOWNTREND_PCT) {
+      return {
+        phase: "accumulation",
+        phaseLabel: "Downtrend Risk",
+        action: `Down ${Math.abs(priceChangePct).toFixed(0)}% over ~30d. Not a long options swing.`,
+        holdTime: "Skip",
+        tier: "watch",
+      };
+    }
   }
 
-  if (priceChangePct < DOWNTREND_PCT) {
-    return {
-      phase: "accumulation",
-      phaseLabel: "Downtrend Risk",
-      action: `Down ${Math.abs(priceChangePct).toFixed(0)}% over ~30d. Not a long swing setup.`,
-      holdTime: "Skip",
-      tier: "watch",
-    };
-  }
-
-  if (score < READY_MIN_SCORE) {
+  if (phase.tier === "ready" && score < READY_MIN_SCORE) {
     return {
       phase: "conviction",
       phaseLabel: "Needs More Confirmation",
@@ -50,6 +54,22 @@ export function applySetupQualityFilter(
         "Near Ready but score is still light. Wait for stronger coil + flow before entering.",
       holdTime: "1–2 week options swing",
       tier: "setting-up",
+    };
+  }
+
+  // Drop weak Flow-Without-Coil / low-score Setting Up so ETF-ish noise vanishes.
+  if (
+    phase.tier === "setting-up" &&
+    (score < SETTING_UP_MIN_SCORE ||
+      (phase.phaseLabel.toLowerCase().includes("flow without coil") && score < 6))
+  ) {
+    return {
+      phase: "conviction",
+      phaseLabel: "Weak Flow Signal",
+      action:
+        "Call flow alone is not enough. Need tighter coil + higher score before it earns a watchlist slot.",
+      holdTime: "Skip",
+      tier: "watch",
     };
   }
 
