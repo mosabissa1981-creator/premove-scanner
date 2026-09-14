@@ -90,9 +90,23 @@ Shared utilities: `src/utils/gamma-math.ts`, `src/utils/chart-domain.ts`, `src/l
 ```bash
 # Required for server-side auth (optional if users paste key in Settings)
 UNUSUAL_WHALES_API_KEY=your_bearer_token
+
+# Web Push (Vercel) — generate with: npx web-push generate-vapid-keys
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:you@example.com
 ```
 
 API key can also be set per-user via Settings page (cookie `uw_api_key` or localStorage `premove_uw_api_key`), or passed as `x-uw-api-key` header.
+
+### Alerts (Web Push + Telegram)
+
+Configure channels in **Settings → Alerts**:
+
+- **Web Push** — lock-screen notifications (requires VAPID env vars above)
+- **Telegram** — paste your bot token + chat ID (stored in the browser only)
+
+After each live scan, PreMove can notify on new Ready setups, breakouts above resistance, and tracked-entry P&L (5% buckets).
 
 ### Scorch Hot (Cloudflare Worker only)
 

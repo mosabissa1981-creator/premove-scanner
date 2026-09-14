@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ApiKeyProvider } from "@/lib/api-key-context";
 import { AppShell } from "@/components/app-shell";
 import { Nav } from "@/components/nav";
+import { ServiceWorkerRegister } from "@/components/service-worker-register";
 
 /**
  * PreMove chrome (nav + API key) for the main product.
@@ -20,6 +21,7 @@ export function AppChrome({ children }: { children: ReactNode }) {
 
   return (
     <ApiKeyProvider>
+      <ServiceWorkerRegister />
       <AppShell>
         <Nav />
         <main className="w-full min-w-0 px-4 py-6 sm:px-6">{children}</main>

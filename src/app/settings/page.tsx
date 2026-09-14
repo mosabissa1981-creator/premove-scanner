@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { useApiKey } from "@/lib/api-key-context";
+import { AlertsSettings } from "@/components/alerts-settings";
 
 function SettingsForm() {
   const { refreshStatus, clearApiKey, setApiKey, hasKey } = useApiKey();
@@ -195,6 +196,8 @@ function SettingsForm() {
           Clear Key
         </button>
       </form>
+
+      <AlertsSettings />
 
       <p className="text-center text-xs text-zinc-500">
         Get your key at{" "}
