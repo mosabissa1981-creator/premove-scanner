@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
 import { loadLastSwingScan, saveLastSwingScan } from "@/lib/last-swing-scan";
+import { processScanAlerts } from "@/lib/alerts/client-notify";
 import type { ScanResult, TickerAnalysis } from "@/lib/unusualwhales/types";
 import { TickerCard } from "@/components/ticker-ui";
 import { TickerSearch } from "@/components/ticker-search";
@@ -17,6 +18,7 @@ export default function ScannerPage() {
   const [result, setResult] = useState<ScanResult | null>(null);
   const [fromCache, setFromCache] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [alertNote, setAlertNote] = useState<string | null>(null);
 
   // Keep last scan until user taps Find/Refresh — avoids re-burning API quota.
   useEffect(() => {
@@ -46,6 +48,19 @@ export default function ScannerPage() {
       setResult(data);
       setFromCache(false);
       saveLastSwingScan(data);
+      setAlertNote(null);
+      try {
+        const alertResult = await processScanAlerts(data as ScanResult);
+        if (alertResult.sent > 0) {
+          setAlertNote(
+            `Sent ${alertResult.sent} alert${alertResult.sent === 1 ? "" : "s"} (Ready / breakout / P&L).`,
+          );
+        } else if (alertResult.errors.length > 0) {
+          setAlertNote(`Alert delivery issue: ${alertResult.errors[0]}`);
+        }
+      } catch {
+        // Alerts are best-effort — never fail the scan UI.
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Scan failed");
     } finally {
@@ -101,6 +116,15 @@ export default function ScannerPage() {
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {error}
+        </div>
+      )}
+
+      {alertNote && (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          {alertNote}{" "}
+          <Link href="/settings" className="underline">
+            Manage alerts
+          </Link>
         </div>
       )}
 
