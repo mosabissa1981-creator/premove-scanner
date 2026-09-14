@@ -9,6 +9,7 @@ const links = [
   { href: "/gex-scan", label: "GEX Scan", shortLabel: "GEX" },
   { href: "/scorch-hot", label: "Scorch Hot", shortLabel: "Hot" },
   { href: "/watchlist", label: "Watchlist", shortLabel: "List" },
+  { href: "/holdings", label: "Holdings", shortLabel: "Hold" },
   { href: "/backtest", label: "Backtest", shortLabel: "Test" },
   { href: "/settings", label: "Settings", shortLabel: "Set" },
 ] as const;

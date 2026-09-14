@@ -48,7 +48,7 @@ describe("alert formatters", () => {
       stub({ ticker: "QCOM", stockPrice: 186, resistanceLevel: 185 }),
     );
     expect(event.kind).toBe("breakout");
-    expect(event.body).toContain("above resistance");
+    expect(event.body).toContain("Good time for entry");
   });
 
   it("formats P&L with sign and percent", () => {

@@ -13,8 +13,8 @@ export function formatReadyAlert(row: TickerAnalysis): AlertEvent {
   return {
     kind: "ready",
     ticker: row.ticker,
-    title: `Ready setup: ${row.ticker}`,
-    body: `${row.ticker} ${px} · score ${row.score}/${row.maxScore} · Coil ${row.coilScore} · R ${r}. Buy calls/debit spreads on close above resistance — 1–2 week hold. Screener only — not financial advice.`,
+    title: `Good time to watch: ${row.ticker}`,
+    body: `${row.ticker} ${px} · score ${row.score}/${row.maxScore} · Coil ${row.coilScore} · R ${r}. Good setup forming — wait for close above resistance, then enter. Screener only — not financial advice.`,
     url: `/ticker/${row.ticker}`,
   };
 }
@@ -26,8 +26,8 @@ export function formatBreakoutAlert(row: TickerAnalysis): AlertEvent {
   return {
     kind: "breakout",
     ticker: row.ticker,
-    title: `Breakout: ${row.ticker}`,
-    body: `${row.ticker} live ${px} above resistance ${r}. Options entry zone for 1–2 week swing. Screener only — not financial advice.`,
+    title: `Good time for entry: ${row.ticker}`,
+    body: `${row.ticker} live ${px} above resistance ${r}. Good time for entry — price cleared resistance. Screener only — not financial advice.`,
     url: `/ticker/${row.ticker}`,
   };
 }
@@ -45,8 +45,8 @@ export function formatPnLAlert(input: {
   return {
     kind: "pnl",
     ticker: input.ticker,
-    title: `${trophy} ${input.ticker} P&L ${sign}${pct.toFixed(1)}%`,
-    body: `${input.ticker}${input.note ? ` · ${input.note}` : ""}\n✅ Entry: ${money(input.entryPrice)}\n${trophy} Live: ${money(input.livePrice)} (${sign}${pct.toFixed(1)}%)\nScreener only — not financial advice.`,
+    title: `${trophy} ${input.ticker} price ${sign}${pct.toFixed(1)}%`,
+    body: `${input.ticker}${input.note ? ` · ${input.note}` : ""}\n✅ Entry: ${money(input.entryPrice)}\n${trophy} Live: ${money(input.livePrice)} (${sign}${pct.toFixed(1)}%)\nPrice moved vs your Bought entry. Screener only — not financial advice.`,
     url: `/ticker/${input.ticker}`,
   };
 }
