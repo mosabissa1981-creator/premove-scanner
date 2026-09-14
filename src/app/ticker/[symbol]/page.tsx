@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiHeaders, useApiKey } from "@/lib/api-key-context";
 import type { GexStudyResult, TickerAnalysis } from "@/lib/unusualwhales/types";
 import { TickerDetailView, WatchlistButton } from "@/components/ticker-detail";
+import { HoldingsButtons } from "@/components/holdings-buttons";
 import { TickerGexPanel } from "@/components/ticker-gex-panel";
 import { ConfluenceContextWidget } from "@/components/ticker-ui";
 import { cleanErrorMessage } from "@/lib/format-error";
@@ -115,6 +116,12 @@ export default function TickerPage({ params }: { params: Promise<{ symbol: strin
         </Link>
         <WatchlistButton ticker={analysis.ticker} />
       </div>
+
+      <HoldingsButtons
+        ticker={analysis.ticker}
+        stockPrice={analysis.stockPrice}
+        resistanceLevel={analysis.resistanceLevel}
+      />
 
       <ConfluenceContextWidget analysis={analysis} />
 

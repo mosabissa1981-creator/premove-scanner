@@ -163,7 +163,7 @@ export function AlertsSettings() {
     setEntryTicker("");
     setEntryPrice("");
     setEntryNote("");
-    setStatus(`Tracking ${ticker} for P&L alerts.`);
+    setStatus(`Bought ${ticker} — see Holdings for live P&L.`);
     setError("");
   }
 
@@ -187,9 +187,9 @@ export function AlertsSettings() {
         <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Notify on</p>
         {(
           [
-            ["notifyReady", "New Ready setups after a scan"],
-            ["notifyBreakout", "Close above resistance (breakout)"],
-            ["notifyPnL", "Tracked entry P&L (5% buckets)"],
+            ["notifyReady", "Good time to watch (new Ready setups)"],
+            ["notifyBreakout", "Good time for entry (breakout)"],
+            ["notifyPnL", "Bought holdings price moves (5% buckets)"],
           ] as const
         ).map(([key, label]) => (
           <label key={key} className="flex items-center gap-3 text-sm text-zinc-300">
@@ -296,7 +296,10 @@ export function AlertsSettings() {
       </div>
 
       <div className="border-t border-zinc-800 pt-4 space-y-3">
-        <p className="text-sm font-medium text-zinc-200">Tracked entries (P&amp;L)</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-medium text-zinc-200">Bought holdings (P&amp;L)</p>
+          <a href="/holdings" className="text-xs text-emerald-400 underline">Open Holdings →</a>
+        </div>
         <form onSubmit={addEntry} className="grid gap-2 sm:grid-cols-3">
           <input
             value={entryTicker}
@@ -321,7 +324,7 @@ export function AlertsSettings() {
             type="submit"
             className="rounded-xl bg-zinc-100 py-2.5 text-sm font-semibold text-zinc-900 sm:col-span-3"
           >
-            Add tracked entry
+            Add Bought holding
           </button>
         </form>
         {entries.length > 0 ? (
@@ -347,7 +350,7 @@ export function AlertsSettings() {
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-zinc-500">No tracked entries yet.</p>
+          <p className="text-xs text-zinc-500">No Bought tickers yet — mark Bought on a ticker page.</p>
         )}
       </div>
 

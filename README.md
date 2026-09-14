@@ -99,6 +99,10 @@ VAPID_SUBJECT=mailto:you@example.com
 
 API key can also be set per-user via Settings page (cookie `uw_api_key` or localStorage `premove_uw_api_key`), or passed as `x-uw-api-key` header.
 
+### Holdings (Bought / Sold)
+
+On any ticker page, tap **Bought** to save an open position or **Sold** to remove it. Open positions live on the **Holdings** tab. Refresh there (or run a scan) to push price-change and “good time for entry” alerts to your iPhone via Web Push.
+
 ### Alerts (Web Push + Telegram)
 
 Configure channels in **Settings → Alerts**:
